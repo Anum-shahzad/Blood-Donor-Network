@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 import healthRouter from './routes/health.js';
+import authRouter from './routes/auth.js';
+import donorsRouter from './routes/donors.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -13,6 +15,8 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/health', healthRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/donors', donorsRouter);
 
 // 404 for anything unmatched
 app.use((req, res) => {
