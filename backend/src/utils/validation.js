@@ -9,6 +9,12 @@ export const ALLOWED_SIGNUP_ROLES = ['donor', 'requester'];
 export const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 export const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
 
+// Statuses a requester can set by hand. pending/verified/matched are
+// system-driven (verification, matching); a requester can only ever close
+// their own request out as fulfilled or cancelled it themselves.
+export const MANUAL_REQUEST_STATUSES = ['fulfilled', 'cancelled'];
+export const CLOSED_REQUEST_STATUSES = ['fulfilled', 'cancelled', 'expired'];
+
 export function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }

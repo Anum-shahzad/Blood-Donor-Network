@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
-import { validateRequestPayload } from '../utils/validation.js';
+import { validateRequestPayload, MANUAL_REQUEST_STATUSES, CLOSED_REQUEST_STATUSES } from '../utils/validation.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 
@@ -62,6 +62,40 @@ router.get('/mine', async (req, res, next) => {
       [req.user.id]
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/requests/:id/status — a requester closing out their own
+// request as fulfilled or cancelled. pending/verified/matched are set by
+// the system (verification, matching), never by this endpoint.
+router.patch('/:id/status', async (req, res, next) => {
+  try {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId)) {
+      return res.status(400).json({ error: 'Invalid request id' });
+    }
+
+    const { status } = req.body;
+    if (!MANUAL_REQUEST_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${MANUAL_REQUEST_STATUSES.join(', ')}` });
+    }
+
+    const [rows] = await pool.query(
+      'SELECT status FROM requests WHERE id = ? AND requester_id = ?',
+      [requestId, req.user.id]
+    );
+    const existing = rows[0];
+    if (!existing) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    if (CLOSED_REQUEST_STATUSES.includes(existing.status)) {
+      return res.status(409).json({ error: `Request is already ${existing.status} and cannot be changed` });
+    }
+
+    await pool.query('UPDATE requests SET status = ? WHERE id = ?', [status, requestId]);
+    res.json({ status: 'ok', new_status: status });
   } catch (err) {
     next(err);
   }
