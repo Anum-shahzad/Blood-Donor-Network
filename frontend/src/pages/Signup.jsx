@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
 import { saveSession, dashboardPathFor } from '../auth/session.js';
+import TopBar from '../components/TopBar.jsx';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 
@@ -41,76 +42,66 @@ export default function Signup() {
   }
 
   return (
-    <main style={styles.main}>
-      <h1>Create an account</h1>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <label>
-          Name
-          <input value={form.name} onChange={update('name')} required style={styles.input} />
-        </label>
-        <label>
-          Email
-          <input type="email" value={form.email} onChange={update('email')} required style={styles.input} />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={form.password}
-            onChange={update('password')}
-            required
-            minLength={8}
-            style={styles.input}
-          />
-        </label>
-        <label>
-          I am a
-          <select value={form.role} onChange={update('role')} style={styles.input}>
-            <option value="donor">Donor</option>
-            <option value="requester">Requester</option>
-          </select>
-        </label>
-        {form.role === 'donor' && (
-          <label>
-            Blood group
-            <select value={form.blood_group} onChange={update('blood_group')} required style={styles.input}>
-              <option value="" disabled>
-                Select your blood group
-              </option>
-              {BLOOD_GROUPS.map((bg) => (
-                <option key={bg} value={bg}>
-                  {bg}
-                </option>
-              ))}
+    <>
+      <TopBar />
+      <main className="page" style={{ maxWidth: 440 }}>
+        <h1>Create an account</h1>
+
+        <form onSubmit={handleSubmit} className="form-card">
+          {error && <p className="error-banner">{error}</p>}
+
+          <label className="field">
+            Name
+            <input value={form.name} onChange={update('name')} required />
+          </label>
+          <label className="field">
+            Email
+            <input type="email" value={form.email} onChange={update('email')} required />
+          </label>
+          <label className="field">
+            Password
+            <input type="password" value={form.password} onChange={update('password')} required minLength={8} />
+          </label>
+          <label className="field">
+            I am a
+            <select value={form.role} onChange={update('role')}>
+              <option value="donor">Donor</option>
+              <option value="requester">Requester</option>
             </select>
           </label>
-        )}
-        <label>
-          Phone
-          <input value={form.phone} onChange={update('phone')} style={styles.input} />
-        </label>
-        <label>
-          City
-          <input value={form.city} onChange={update('city')} style={styles.input} />
-        </label>
+          {form.role === 'donor' && (
+            <label className="field">
+              Blood group
+              <select value={form.blood_group} onChange={update('blood_group')} required>
+                <option value="" disabled>
+                  Select your blood group
+                </option>
+                {BLOOD_GROUPS.map((bg) => (
+                  <option key={bg} value={bg}>
+                    {bg}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            Phone
+            <input value={form.phone} onChange={update('phone')} />
+          </label>
+          <label className="field">
+            City
+            <input value={form.city} onChange={update('city')} />
+          </label>
 
-        {error && <p style={styles.error}>{error}</p>}
+          <button type="submit" disabled={submitting} className="btn btn-primary btn-block">
+            {submitting ? 'Creating account...' : 'Sign up'}
+          </button>
+        </form>
 
-        <button type="submit" disabled={submitting} style={styles.button}>
-          {submitting ? 'Creating account...' : 'Sign up'}
-        </button>
-      </form>
-      <p>
-        Already have an account? <Link to="/login">Log in</Link>
-      </p>
-    </main>
+        <p style={{ marginTop: '1rem' }}>
+          Already have an account? <Link to="/login">Log in</Link>
+        </p>
+      </main>
+    </>
   );
 }
-
-const styles = {
-  main: { fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 420, margin: '0 auto' },
-  form: { display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  input: { display: 'block', width: '100%', padding: '0.5rem', marginTop: '0.25rem' },
-  button: { padding: '0.6rem', marginTop: '0.5rem', cursor: 'pointer' },
-  error: { color: '#b00020' },
-};
