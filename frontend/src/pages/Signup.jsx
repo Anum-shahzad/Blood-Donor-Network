@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
-import { saveSession } from '../auth/session.js';
+import { saveSession, dashboardPathFor } from '../auth/session.js';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 
@@ -32,7 +32,7 @@ export default function Signup() {
       if (payload.role !== 'donor') delete payload.blood_group;
       const data = await apiPost('/api/auth/signup', payload);
       saveSession(data.token, data.user);
-      navigate(data.user.role === 'donor' ? '/donor/dashboard' : '/');
+      navigate(dashboardPathFor(data.user.role));
     } catch (err) {
       setError(err.message);
     } finally {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
-import { saveSession } from '../auth/session.js';
+import { saveSession, dashboardPathFor } from '../auth/session.js';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -17,7 +17,7 @@ export default function Login() {
     try {
       const data = await apiPost('/api/auth/login', { email, password });
       saveSession(data.token, data.user);
-      navigate(data.user.role === 'donor' ? '/donor/dashboard' : '/');
+      navigate(dashboardPathFor(data.user.role));
     } catch (err) {
       setError(err.message);
     } finally {

@@ -3,8 +3,9 @@ import Home from './pages/Home.jsx';
 import Signup from './pages/Signup.jsx';
 import Login from './pages/Login.jsx';
 import DonorDashboard from './pages/DonorDashboard.jsx';
+import RequesterDashboard from './pages/RequesterDashboard.jsx';
 
-// Request creation and admin panel get added as those features land.
+// Admin panel gets added once that role's features land.
 export default function App() {
   return (
     <Routes>
@@ -12,6 +13,7 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/login" element={<Login />} />
       <Route path="/donor/dashboard" element={<DonorDashboard />} />
+      <Route path="/requester/dashboard" element={<RequesterDashboard />} />
     </Routes>
   );
 }
