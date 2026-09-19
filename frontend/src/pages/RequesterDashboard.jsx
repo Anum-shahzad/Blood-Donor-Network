@@ -18,6 +18,8 @@ const emptyForm = {
 export default function RequesterDashboard() {
   const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
+  const [matchesByRequest, setMatchesByRequest] = useState({});
+  const [matchError, setMatchError] = useState({});
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +37,13 @@ export default function RequesterDashboard() {
     apiGet('/api/requests/mine')
       .then(setRequests)
       .catch((err) => setError(err.message));
+  }
+
+  function loadMatches(requestId) {
+    setMatchError((m) => ({ ...m, [requestId]: '' }));
+    apiGet(`/api/requests/${requestId}/matches`)
+      .then((data) => setMatchesByRequest((m) => ({ ...m, [requestId]: data })))
+      .catch((err) => setMatchError((m) => ({ ...m, [requestId]: err.message })));
   }
 
   function update(field) {
@@ -146,6 +155,7 @@ export default function RequesterDashboard() {
               <th>Urgency</th>
               <th>Status</th>
               <th>Verified</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -158,11 +168,42 @@ export default function RequesterDashboard() {
                 <td>{r.urgency}</td>
                 <td>{r.status}</td>
                 <td>{r.is_verified ? 'Yes' : 'Not yet'}</td>
+                <td>
+                  <button onClick={() => loadMatches(r.id)} style={styles.linkButton}>
+                    View matches
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      {requests.map((r) => {
+        const data = matchesByRequest[r.id];
+        const err = matchError[r.id];
+        if (!data && !err) return null;
+        return (
+          <div key={`matches-${r.id}`} style={styles.matchesPanel}>
+            <h3>
+              Matches for request #{r.id} ({r.blood_group}, {r.city})
+            </h3>
+            {err && <p style={styles.error}>{err}</p>}
+            {data && data.matches.length === 0 && <p>No available compatible donors found right now.</p>}
+            {data && data.matches.length > 0 && (
+              <ol>
+                {data.matches.map((m) => (
+                  <li key={m.donor_id}>
+                    <strong>{m.name}</strong> — {m.blood_group}, {m.city || 'city not set'} — score {m.score}
+                    <br />
+                    <span style={styles.reasons}>{m.reasons.join(' · ')}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        );
+      })}
 
       <button onClick={handleLogout} style={styles.logout}>
         Log out
@@ -180,5 +221,8 @@ const styles = {
   error: { color: '#b00020' },
   disclaimer: { fontSize: '0.85rem', color: '#555', marginTop: '1rem' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '1rem' },
+  linkButton: { background: 'none', border: 'none', color: '#1a56db', cursor: 'pointer', textDecoration: 'underline', padding: 0 },
+  matchesPanel: { marginTop: '1.5rem', padding: '1rem', border: '1px solid #ddd', borderRadius: 6 },
+  reasons: { fontSize: '0.85rem', color: '#555' },
   logout: { marginTop: '2rem', background: 'none', border: '1px solid #999', padding: '0.4rem 0.8rem', cursor: 'pointer' },
 };
