@@ -20,5 +20,6 @@ export function clearSession() {
 export function dashboardPathFor(role) {
   if (role === 'donor') return '/donor/dashboard';
   if (role === 'requester') return '/requester/dashboard';
+  if (role === 'admin') return '/admin/dashboard';
   return '/';
 }
