@@ -15,3 +15,10 @@ export function clearSession() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
 }
+
+// Where to send someone right after they log in or sign up.
+export function dashboardPathFor(role) {
+  if (role === 'donor') return '/donor/dashboard';
+  if (role === 'requester') return '/requester/dashboard';
+  return '/';
+}
