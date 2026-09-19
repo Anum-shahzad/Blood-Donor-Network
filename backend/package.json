@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test:compatibility": "node src/services/matching/compatibility.selfcheck.js"
+    "test:compatibility": "node src/services/matching/compatibility.selfcheck.js",
+    "test:matching": "node src/services/matching/donorMatching.selfcheck.js",
+    "test:auth": "node src/services/authService.selfcheck.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
