@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet, apiPost } from '../api/client.js';
+import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
@@ -44,6 +44,16 @@ export default function RequesterDashboard() {
     apiGet(`/api/requests/${requestId}/matches`)
       .then((data) => setMatchesByRequest((m) => ({ ...m, [requestId]: data })))
       .catch((err) => setMatchError((m) => ({ ...m, [requestId]: err.message })));
+  }
+
+  async function updateStatus(requestId, status) {
+    setError('');
+    try {
+      await apiPatch(`/api/requests/${requestId}/status`, { status });
+      loadRequests();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function update(field) {
@@ -172,6 +182,18 @@ export default function RequesterDashboard() {
                   <button onClick={() => loadMatches(r.id)} style={styles.linkButton}>
                     View matches
                   </button>
+                  {!['fulfilled', 'cancelled', 'expired'].includes(r.status) && (
+                    <>
+                      {' · '}
+                      <button onClick={() => updateStatus(r.id, 'fulfilled')} style={styles.linkButton}>
+                        Mark fulfilled
+                      </button>
+                      {' · '}
+                      <button onClick={() => updateStatus(r.id, 'cancelled')} style={styles.linkButton}>
+                        Cancel
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
