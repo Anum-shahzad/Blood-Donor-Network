@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
+import TopBar from '../components/TopBar.jsx';
 
 export default function DonorDashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
   const [toggling, setToggling] = useState(false);
+  const user = getUser();
 
   useEffect(() => {
-    const user = getUser();
     if (!user) {
       navigate('/login');
       return;
@@ -40,71 +41,51 @@ export default function DonorDashboard() {
     navigate('/login');
   }
 
-  if (error) {
-    return (
-      <main style={styles.main}>
-        <p style={styles.error}>{error}</p>
-        <button onClick={handleLogout}>Log out</button>
-      </main>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <main style={styles.main}>
-        <p>Loading your profile...</p>
-      </main>
-    );
-  }
-
   return (
-    <main style={styles.main}>
-      <h1>Welcome, {profile.name}</h1>
-      <dl style={styles.dl}>
-        <dt>Blood group</dt>
-        <dd>{profile.blood_group || 'Not set yet'}</dd>
-        <dt>City</dt>
-        <dd>{profile.city || 'Not set'}</dd>
-        <dt>Last donation</dt>
-        <dd>{profile.last_donation_date || 'None recorded'}</dd>
-        <dt>Blood group verified</dt>
-        <dd>{profile.is_blood_group_verified ? 'Yes' : 'Not yet'}</dd>
-      </dl>
+    <>
+      <TopBar user={user} onLogout={handleLogout} />
+      <main className="page">
+        <h1>Your donor profile</h1>
 
-      <button onClick={toggleAvailability} disabled={toggling} style={styles.toggle(profile.is_available)}>
-        {toggling
-          ? 'Updating...'
-          : profile.is_available
-          ? "Available — tap to mark unavailable"
-          : "Unavailable — tap to mark available"}
-      </button>
+        {error && <p className="error-banner">{error}</p>}
 
-      <p style={styles.disclaimer}>
-        This status only tells nearby requesters you may be reachable. Final
-        eligibility and screening always happen at the donation facility.
-      </p>
+        {!profile && !error && <p className="empty-state">Loading your profile...</p>}
 
-      <button onClick={handleLogout} style={styles.logout}>
-        Log out
-      </button>
-    </main>
+        {profile && (
+          <>
+            <div className={`record-card state-${profile.is_available ? 'available' : 'closed'}`}>
+              <div className="record-title">
+                <span>{profile.blood_group || 'Blood group not set'}</span>
+                <span className={`badge ${profile.is_blood_group_verified ? 'badge-teal' : 'badge-neutral'}`}>
+                  {profile.is_blood_group_verified ? 'Verified' : 'Not verified'}
+                </span>
+              </div>
+              <p className="record-meta">
+                {profile.city || 'City not set'} · Last donation:{' '}
+                {profile.last_donation_date || 'none recorded'}
+              </p>
+            </div>
+
+            <button
+              onClick={toggleAvailability}
+              disabled={toggling}
+              className={`availability-toggle ${profile.is_available ? 'is-available' : 'is-unavailable'}`}
+            >
+              {toggling
+                ? 'Updating...'
+                : profile.is_available
+                ? 'Available — tap to mark unavailable'
+                : 'Unavailable — tap to mark available'}
+            </button>
+
+            <p className="disclaimer">
+              This status only tells nearby requesters you may be reachable.
+              Final eligibility and screening always happen at the donation
+              facility.
+            </p>
+          </>
+        )}
+      </main>
+    </>
   );
 }
-
-const styles = {
-  main: { fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 480, margin: '0 auto' },
-  dl: { display: 'grid', gridTemplateColumns: '160px 1fr', rowGap: '0.5rem' },
-  toggle: (available) => ({
-    marginTop: '1.5rem',
-    padding: '0.75rem 1rem',
-    width: '100%',
-    cursor: 'pointer',
-    backgroundColor: available ? '#1b7a3d' : '#6b6b6b',
-    color: 'white',
-    border: 'none',
-    borderRadius: 6,
-  }),
-  disclaimer: { fontSize: '0.85rem', color: '#555', marginTop: '1rem' },
-  logout: { marginTop: '2rem', background: 'none', border: '1px solid #999', padding: '0.4rem 0.8rem', cursor: 'pointer' },
-  error: { color: '#b00020' },
-};
