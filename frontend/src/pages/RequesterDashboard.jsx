@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
+import TopBar from '../components/TopBar.jsx';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
+const CLOSED_STATUSES = ['fulfilled', 'cancelled', 'expired'];
 
 const emptyForm = {
   blood_group: '',
@@ -15,8 +17,22 @@ const emptyForm = {
   required_by: '',
 };
 
+function stateClassFor(request) {
+  if (CLOSED_STATUSES.includes(request.status)) return 'state-closed';
+  if (request.is_verified) return 'state-verified';
+  if (request.urgency === 'critical') return 'state-critical';
+  return 'state-pending';
+}
+
+function urgencyBadgeClass(urgency) {
+  if (urgency === 'critical' || urgency === 'high') return 'badge-red';
+  if (urgency === 'medium') return 'badge-amber';
+  return 'badge-neutral';
+}
+
 export default function RequesterDashboard() {
   const navigate = useNavigate();
+  const user = getUser();
   const [requests, setRequests] = useState([]);
   const [matchesByRequest, setMatchesByRequest] = useState({});
   const [matchError, setMatchError] = useState({});
@@ -25,7 +41,6 @@ export default function RequesterDashboard() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const user = getUser();
     if (!user) {
       navigate('/login');
       return;
@@ -85,166 +100,132 @@ export default function RequesterDashboard() {
   }
 
   return (
-    <main style={styles.main}>
-      <h1>Your blood requests</h1>
+    <>
+      <TopBar user={user} onLogout={handleLogout} />
+      <main className="page">
+        <h1>Your blood requests</h1>
 
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <h2 style={styles.h2}>Create a new request</h2>
-        <label>
-          Blood group needed
-          <select value={form.blood_group} onChange={update('blood_group')} required style={styles.input}>
-            <option value="" disabled>
-              Select blood group
-            </option>
-            {BLOOD_GROUPS.map((bg) => (
-              <option key={bg} value={bg}>
-                {bg}
+        {error && <p className="error-banner">{error}</p>}
+
+        <form onSubmit={handleSubmit} className="form-card">
+          <h2 style={{ marginTop: 0 }}>Create a new request</h2>
+
+          <label className="field">
+            Blood group needed
+            <select value={form.blood_group} onChange={update('blood_group')} required>
+              <option value="" disabled>
+                Select blood group
               </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Units needed
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={form.units_needed}
-            onChange={update('units_needed')}
-            required
-            style={styles.input}
-          />
-        </label>
-        <label>
-          Hospital / facility
-          <input value={form.hospital_name} onChange={update('hospital_name')} required style={styles.input} />
-        </label>
-        <label>
-          City
-          <input value={form.city} onChange={update('city')} required style={styles.input} />
-        </label>
-        <label>
-          Urgency
-          <select value={form.urgency} onChange={update('urgency')} style={styles.input}>
-            {URGENCY_LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Needed by (optional)
-          <input type="datetime-local" value={form.required_by} onChange={update('required_by')} style={styles.input} />
-        </label>
+              {BLOOD_GROUPS.map((bg) => (
+                <option key={bg} value={bg}>
+                  {bg}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Units needed
+            <input type="number" min={1} max={20} value={form.units_needed} onChange={update('units_needed')} required />
+          </label>
+          <label className="field">
+            Hospital / facility
+            <input value={form.hospital_name} onChange={update('hospital_name')} required />
+          </label>
+          <label className="field">
+            City
+            <input value={form.city} onChange={update('city')} required />
+          </label>
+          <label className="field">
+            Urgency
+            <select value={form.urgency} onChange={update('urgency')}>
+              {URGENCY_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Needed by (optional)
+            <input type="datetime-local" value={form.required_by} onChange={update('required_by')} />
+          </label>
 
-        {error && <p style={styles.error}>{error}</p>}
+          <button type="submit" disabled={submitting} className="btn btn-primary btn-block">
+            {submitting ? 'Submitting...' : 'Create request'}
+          </button>
 
-        <button type="submit" disabled={submitting} style={styles.button}>
-          {submitting ? 'Submitting...' : 'Create request'}
-        </button>
-      </form>
+          <p className="disclaimer">
+            Submitting a request does not guarantee a donor or confirm
+            medical eligibility. A hospital or admin verifies genuine
+            requests, and final screening always happens at the donation
+            facility.
+          </p>
+        </form>
 
-      <p style={styles.disclaimer}>
-        Submitting a request does not guarantee a donor or confirm medical
-        eligibility. A hospital or admin verifies genuine requests, and final
-        screening always happens at the donation facility.
-      </p>
+        <h2>Your requests</h2>
+        {requests.length === 0 ? (
+          <p className="empty-state">You haven't created any requests yet.</p>
+        ) : (
+          requests.map((r) => {
+            const closed = CLOSED_STATUSES.includes(r.status);
+            const data = matchesByRequest[r.id];
+            const err = matchError[r.id];
+            return (
+              <div key={r.id} className={`record-card ${stateClassFor(r)}`}>
+                <div className="record-title">
+                  <span>
+                    {r.blood_group} · {r.units_needed} unit{r.units_needed > 1 ? 's' : ''}
+                  </span>
+                  <span className={`badge ${urgencyBadgeClass(r.urgency)}`}>{r.urgency}</span>
+                </div>
+                <p className="record-meta">
+                  {r.hospital_name}, {r.city} · Status: {r.status} · Verified:{' '}
+                  {r.is_verified ? 'Yes' : 'Not yet'}
+                </p>
 
-      <h2 style={styles.h2}>Your requests</h2>
-      {requests.length === 0 ? (
-        <p>You haven't created any requests yet.</p>
-      ) : (
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th>Blood group</th>
-              <th>Units</th>
-              <th>Hospital</th>
-              <th>City</th>
-              <th>Urgency</th>
-              <th>Status</th>
-              <th>Verified</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {requests.map((r) => (
-              <tr key={r.id}>
-                <td>{r.blood_group}</td>
-                <td>{r.units_needed}</td>
-                <td>{r.hospital_name}</td>
-                <td>{r.city}</td>
-                <td>{r.urgency}</td>
-                <td>{r.status}</td>
-                <td>{r.is_verified ? 'Yes' : 'Not yet'}</td>
-                <td>
-                  <button onClick={() => loadMatches(r.id)} style={styles.linkButton}>
-                    View matches
-                  </button>
-                  {!['fulfilled', 'cancelled', 'expired'].includes(r.status) && (
-                    <>
-                      {' · '}
-                      <button onClick={() => updateStatus(r.id, 'fulfilled')} style={styles.linkButton}>
-                        Mark fulfilled
-                      </button>
-                      {' · '}
-                      <button onClick={() => updateStatus(r.id, 'cancelled')} style={styles.linkButton}>
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+                {!closed && (
+                  <div className="record-actions">
+                    <button onClick={() => loadMatches(r.id)} className="btn-text">
+                      View matches
+                    </button>
+                    <button onClick={() => updateStatus(r.id, 'fulfilled')} className="btn-text">
+                      Mark fulfilled
+                    </button>
+                    <button onClick={() => updateStatus(r.id, 'cancelled')} className="btn-text">
+                      Cancel
+                    </button>
+                  </div>
+                )}
 
-      {requests.map((r) => {
-        const data = matchesByRequest[r.id];
-        const err = matchError[r.id];
-        if (!data && !err) return null;
-        return (
-          <div key={`matches-${r.id}`} style={styles.matchesPanel}>
-            <h3>
-              Matches for request #{r.id} ({r.blood_group}, {r.city})
-            </h3>
-            {err && <p style={styles.error}>{err}</p>}
-            {data && data.matches.length === 0 && <p>No available compatible donors found right now.</p>}
-            {data && data.matches.length > 0 && (
-              <ol>
-                {data.matches.map((m) => (
-                  <li key={m.donor_id}>
-                    <strong>{m.name}</strong> — {m.blood_group}, {m.city || 'city not set'} — score {m.score}
-                    <br />
-                    <span style={styles.reasons}>{m.reasons.join(' · ')}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        );
-      })}
-
-      <button onClick={handleLogout} style={styles.logout}>
-        Log out
-      </button>
-    </main>
+                {(data || err) && (
+                  <div className="form-card" style={{ marginTop: '0.75rem' }}>
+                    <strong style={{ fontFamily: 'var(--font-display)', fontSize: '0.9rem' }}>
+                      Potential matches
+                    </strong>
+                    {err && <p className="error-banner" style={{ marginTop: '0.5rem' }}>{err}</p>}
+                    {data && data.matches.length === 0 && (
+                      <p className="empty-state">No available compatible donors right now.</p>
+                    )}
+                    {data && data.matches.length > 0 && (
+                      <ol style={{ paddingLeft: '1.1rem', margin: '0.5rem 0 0' }}>
+                        {data.matches.map((m) => (
+                          <li key={m.donor_id} style={{ marginBottom: '0.5rem' }}>
+                            <strong>{m.name}</strong> — {m.blood_group}, {m.city || 'city not set'} — score {m.score}
+                            <br />
+                            <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+                              {m.reasons.join(' · ')}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </main>
+    </>
   );
 }
-
-const styles = {
-  main: { fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 640, margin: '0 auto' },
-  h2: { marginTop: '2rem' },
-  form: { display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  input: { display: 'block', width: '100%', padding: '0.5rem', marginTop: '0.25rem' },
-  button: { padding: '0.6rem', marginTop: '0.5rem', cursor: 'pointer' },
-  error: { color: '#b00020' },
-  disclaimer: { fontSize: '0.85rem', color: '#555', marginTop: '1rem' },
-  table: { width: '100%', borderCollapse: 'collapse', marginTop: '1rem' },
-  linkButton: { background: 'none', border: 'none', color: '#1a56db', cursor: 'pointer', textDecoration: 'underline', padding: 0 },
-  matchesPanel: { marginTop: '1.5rem', padding: '1rem', border: '1px solid #ddd', borderRadius: 6 },
-  reasons: { fontSize: '0.85rem', color: '#555' },
-  logout: { marginTop: '2rem', background: 'none', border: '1px solid #999', padding: '0.4rem 0.8rem', cursor: 'pointer' },
-};
