@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
+import TopBar from '../components/TopBar.jsx';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const user = getUser();
   const [requests, setRequests] = useState([]);
   const [donors, setDonors] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const user = getUser();
     if (!user) {
       navigate('/login');
       return;
@@ -53,103 +54,83 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main style={styles.main}>
-      <h1>Admin</h1>
-      {error && <p style={styles.error}>{error}</p>}
+    <>
+      <TopBar user={user} onLogout={handleLogout} />
+      <main className="page" style={{ maxWidth: 800 }}>
+        <h1>Admin</h1>
+        {error && <p className="error-banner">{error}</p>}
 
-      <h2 style={styles.h2}>Requests</h2>
-      <p style={styles.note}>
-        Verifying confirms this is a genuine emergency request — it is not a
-        medical judgment. Screening and crossmatching always happen at the
-        donation facility.
-      </p>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th>Requester</th>
-            <th>Blood group</th>
-            <th>Hospital</th>
-            <th>City</th>
-            <th>Status</th>
-            <th>Verified</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {requests.map((r) => (
-            <tr key={r.id}>
-              <td>
-                {r.requester_name}
-                <br />
-                <span style={styles.muted}>{r.requester_email}</span>
-              </td>
-              <td>{r.blood_group}</td>
-              <td>{r.hospital_name}</td>
-              <td>{r.city}</td>
-              <td>{r.status}</td>
-              <td>{r.is_verified ? 'Yes' : 'No'}</td>
-              <td>
-                <button onClick={() => verifyRequest(r.id, !r.is_verified)} style={styles.linkButton}>
+        <h2>Requests</h2>
+        <p className="disclaimer" style={{ borderTop: 'none', paddingTop: 0 }}>
+          Verifying confirms this is a genuine emergency request — it is not
+          a medical judgment. Screening and crossmatching always happen at
+          the donation facility.
+        </p>
+        {requests.length === 0 ? (
+          <p className="empty-state">No requests yet.</p>
+        ) : (
+          requests.map((r) => (
+            <div
+              key={r.id}
+              className={`record-card ${r.is_verified ? 'state-verified' : 'state-unverified'}`}
+            >
+              <div className="record-title">
+                <span>
+                  {r.requester_name} — {r.blood_group}
+                </span>
+                <span className={`badge ${r.is_verified ? 'badge-teal' : 'badge-red'}`}>
+                  {r.is_verified ? 'Verified' : 'Unverified'}
+                </span>
+              </div>
+              <p className="record-meta">
+                {r.requester_email} · {r.hospital_name}, {r.city} · Status: {r.status}
+              </p>
+              <div className="record-actions">
+                <button onClick={() => verifyRequest(r.id, !r.is_verified)} className="btn-text">
                   {r.is_verified ? 'Un-verify' : 'Verify'}
                 </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+            </div>
+          ))
+        )}
 
-      <h2 style={styles.h2}>Donors</h2>
-      <p style={styles.note}>
-        Verifying a donor's blood group confirms the platform has some basis
-        for trusting the self-declared group — it is not a lab crossmatch.
-      </p>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>City</th>
-            <th>Blood group</th>
-            <th>Available</th>
-            <th>Verified</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {donors.map((d) => (
-            <tr key={d.id}>
-              <td>
-                {d.name}
-                <br />
-                <span style={styles.muted}>{d.email}</span>
-              </td>
-              <td>{d.city}</td>
-              <td>{d.blood_group}</td>
-              <td>{d.is_available ? 'Yes' : 'No'}</td>
-              <td>{d.is_blood_group_verified ? 'Yes' : 'No'}</td>
-              <td>
-                <button onClick={() => verifyDonor(d.id, !d.is_blood_group_verified)} style={styles.linkButton}>
+        <h2>Donors</h2>
+        <p className="disclaimer" style={{ borderTop: 'none', paddingTop: 0 }}>
+          Verifying a donor's blood group confirms the platform has some
+          basis for trusting the self-declared group — it is not a lab
+          crossmatch.
+        </p>
+        {donors.length === 0 ? (
+          <p className="empty-state">No donors yet.</p>
+        ) : (
+          donors.map((d) => (
+            <div
+              key={d.id}
+              className={`record-card ${d.is_blood_group_verified ? 'state-verified' : 'state-unverified'}`}
+            >
+              <div className="record-title">
+                <span>
+                  {d.name} — {d.blood_group}
+                </span>
+                <span className={`badge ${d.is_blood_group_verified ? 'badge-teal' : 'badge-red'}`}>
+                  {d.is_blood_group_verified ? 'Verified' : 'Unverified'}
+                </span>
+              </div>
+              <p className="record-meta">
+                {d.email} · {d.city} ·{' '}
+                <span className={`badge ${d.is_available ? 'badge-teal' : 'badge-neutral'}`}>
+                  {d.is_available ? 'Available' : 'Unavailable'}
+                </span>
+              </p>
+              <div className="record-actions">
+                <button onClick={() => verifyDonor(d.id, !d.is_blood_group_verified)} className="btn-text">
                   {d.is_blood_group_verified ? 'Un-verify' : 'Verify'}
                 </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <button onClick={handleLogout} style={styles.logout}>
-        Log out
-      </button>
-    </main>
+              </div>
+            </div>
+          ))
+        )}
+      </main>
+    </>
   );
 }
-
-const styles = {
-  main: { fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 900, margin: '0 auto' },
-  h2: { marginTop: '2rem' },
-  note: { fontSize: '0.85rem', color: '#555' },
-  muted: { fontSize: '0.8rem', color: '#777' },
-  table: { width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem' },
-  linkButton: { background: 'none', border: 'none', color: '#1a56db', cursor: 'pointer', textDecoration: 'underline', padding: 0 },
-  logout: { marginTop: '2rem', background: 'none', border: '1px solid #999', padding: '0.4rem 0.8rem', cursor: 'pointer' },
-  error: { color: '#b00020' },
-};
