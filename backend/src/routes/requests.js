@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validateRequestPayload } from '../utils/validation.js';
+import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
+import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 
 const router = Router();
 
@@ -60,6 +62,48 @@ router.get('/mine', async (req, res, next) => {
       [req.user.id]
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/requests/:id/matches — potential donor matches for one of the
+// requester's own requests. Never exposes another requester's request, even
+// to probe whether it exists (404, not 403, if it's not theirs).
+router.get('/:id/matches', async (req, res, next) => {
+  try {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId)) {
+      return res.status(400).json({ error: 'Invalid request id' });
+    }
+
+    const [requestRows] = await pool.query(
+      'SELECT * FROM requests WHERE id = ? AND requester_id = ?',
+      [requestId, req.user.id]
+    );
+    const request = requestRows[0];
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    const compatibleGroups = getCompatibleDonorGroups(request.blood_group);
+
+    const [candidates] = await pool.query(
+      `SELECT u.id, u.name, u.city, dp.blood_group, dp.last_donation_date, dp.is_blood_group_verified
+       FROM donor_profiles dp
+       JOIN users u ON u.id = dp.user_id
+       WHERE dp.is_available = TRUE AND dp.blood_group IN (?)`,
+      [compatibleGroups]
+    );
+
+    const matches = rankDonorCandidates(candidates, request);
+
+    res.json({
+      request_id: requestId,
+      compatible_blood_groups: compatibleGroups,
+      match_count: matches.length,
+      matches,
+    });
   } catch (err) {
     next(err);
   }
