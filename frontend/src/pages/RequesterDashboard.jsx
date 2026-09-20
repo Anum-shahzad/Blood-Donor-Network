@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
-import TopBar from '../components/TopBar.jsx';
+import DashboardLayout from '../components/DashboardLayout.jsx';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
@@ -99,15 +99,44 @@ export default function RequesterDashboard() {
     navigate('/login');
   }
 
+  if (!user) return null;
+
+  // Derived client-side from the requests already loaded above — not a
+  // separate API call and nothing the backend doesn't already tell us.
+  const activeCount = requests.filter((r) => !CLOSED_STATUSES.includes(r.status)).length;
+  const fulfilledCount = requests.filter((r) => r.status === 'fulfilled').length;
+  const criticalCount = requests.filter(
+    (r) => r.urgency === 'critical' && !CLOSED_STATUSES.includes(r.status)
+  ).length;
+
   return (
-    <>
-      <TopBar user={user} onLogout={handleLogout} />
-      <main className="page">
-        <h1>Your blood requests</h1>
+    <DashboardLayout user={user} onLogout={handleLogout}>
+      <div className="dashboard-header">
+        <h1>Welcome back, {user.name}</h1>
+        <p className="dashboard-subtext">Here's an overview of your blood requests.</p>
+      </div>
 
-        {error && <p className="error-banner">{error}</p>}
+      {error && <p className="error-banner">{error}</p>}
 
-        <form onSubmit={handleSubmit} className="form-card">
+      {requests.length > 0 && (
+        <div className="stat-grid">
+          <div className="stat-card">
+            <div className="stat-card-label">Active Requests</div>
+            <div className="stat-card-value">{activeCount}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-label">Fulfilled</div>
+            <div className="stat-card-value">{fulfilledCount}</div>
+          </div>
+          <div className="stat-card stat-card--accent">
+            <div className="stat-card-label">Critical</div>
+            <div className="stat-card-value">{criticalCount}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="form-card">
+        <form onSubmit={handleSubmit}>
           <h2 style={{ marginTop: 0 }}>Create a new request</h2>
 
           <label className="field">
@@ -137,13 +166,19 @@ export default function RequesterDashboard() {
           </label>
           <label className="field">
             Urgency
-            <select value={form.urgency} onChange={update('urgency')}>
+            <div className="segmented">
               {URGENCY_LEVELS.map((level) => (
-                <option key={level} value={level}>
+                <button
+                  key={level}
+                  type="button"
+                  data-level={level}
+                  className={`segmented-option${form.urgency === level ? ' is-active' : ''}`}
+                  onClick={() => setForm((f) => ({ ...f, urgency: level }))}
+                >
                   {level}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
           </label>
           <label className="field">
             Needed by (optional)
@@ -161,71 +196,88 @@ export default function RequesterDashboard() {
             facility.
           </p>
         </form>
+      </div>
 
-        <h2>Your requests</h2>
-        {requests.length === 0 ? (
-          <p className="empty-state">You haven't created any requests yet.</p>
-        ) : (
-          requests.map((r) => {
-            const closed = CLOSED_STATUSES.includes(r.status);
-            const data = matchesByRequest[r.id];
-            const err = matchError[r.id];
-            return (
-              <div key={r.id} className={`record-card ${stateClassFor(r)}`}>
-                <div className="record-title">
-                  <span>
-                    {r.blood_group} · {r.units_needed} unit{r.units_needed > 1 ? 's' : ''}
-                  </span>
-                  <span className={`badge ${urgencyBadgeClass(r.urgency)}`}>{r.urgency}</span>
-                </div>
-                <p className="record-meta">
-                  {r.hospital_name}, {r.city} · Status: {r.status} · Verified:{' '}
-                  {r.is_verified ? 'Yes' : 'Not yet'}
-                </p>
-
-                {!closed && (
-                  <div className="record-actions">
-                    <button onClick={() => loadMatches(r.id)} className="btn-text">
-                      View matches
-                    </button>
-                    <button onClick={() => updateStatus(r.id, 'fulfilled')} className="btn-text">
-                      Mark fulfilled
-                    </button>
-                    <button onClick={() => updateStatus(r.id, 'cancelled')} className="btn-text">
-                      Cancel
-                    </button>
-                  </div>
-                )}
-
-                {(data || err) && (
-                  <div className="form-card" style={{ marginTop: '0.75rem' }}>
-                    <strong style={{ fontFamily: 'var(--font-display)', fontSize: '0.9rem' }}>
-                      Potential matches
-                    </strong>
-                    {err && <p className="error-banner" style={{ marginTop: '0.5rem' }}>{err}</p>}
-                    {data && data.matches.length === 0 && (
-                      <p className="empty-state">No available compatible donors right now.</p>
-                    )}
-                    {data && data.matches.length > 0 && (
-                      <ol style={{ paddingLeft: '1.1rem', margin: '0.5rem 0 0' }}>
-                        {data.matches.map((m) => (
-                          <li key={m.donor_id} style={{ marginBottom: '0.5rem' }}>
-                            <strong>{m.name}</strong> — {m.blood_group}, {m.city || 'city not set'} — score {m.score}
-                            <br />
-                            <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-                              {m.reasons.join(' · ')}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-                )}
+      <h2>Your requests</h2>
+      {requests.length === 0 ? (
+        <p className="empty-state">You haven't created any requests yet.</p>
+      ) : (
+        requests.map((r) => {
+          const closed = CLOSED_STATUSES.includes(r.status);
+          const data = matchesByRequest[r.id];
+          const err = matchError[r.id];
+          return (
+            <div key={r.id} className={`record-card ${stateClassFor(r)}`}>
+              <div className="record-title">
+                <span>
+                  {r.blood_group} · {r.units_needed} unit{r.units_needed > 1 ? 's' : ''}
+                </span>
+                <span className={`badge ${urgencyBadgeClass(r.urgency)}`}>{r.urgency}</span>
               </div>
-            );
-          })
-        )}
-      </main>
-    </>
+              <p className="record-meta">
+                {r.hospital_name}, {r.city} · Status: {r.status} · Verified:{' '}
+                {r.is_verified ? 'Yes' : 'Not yet'}
+              </p>
+
+              {!closed && (
+                <div className="record-actions">
+                  <button onClick={() => loadMatches(r.id)} className="btn-text">
+                    View matches
+                  </button>
+                  <button onClick={() => updateStatus(r.id, 'fulfilled')} className="btn-text">
+                    Mark fulfilled
+                  </button>
+                  <button onClick={() => updateStatus(r.id, 'cancelled')} className="btn-text">
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {(data || err) && (
+                <div className="form-card" style={{ marginTop: '0.75rem' }}>
+                  <strong style={{ fontFamily: 'var(--font-display)', fontSize: '0.9rem' }}>
+                    Potential matches
+                  </strong>
+                  {err && <p className="error-banner" style={{ marginTop: '0.5rem' }}>{err}</p>}
+                  {data && data.matches.length === 0 && (
+                    <p className="empty-state">No available compatible donors right now.</p>
+                  )}
+                  {data && data.matches.length > 0 && (
+                    <div style={{ marginTop: '0.6rem' }}>
+                      {data.matches.map((m) => (
+                        <div
+                          key={m.donor_id}
+                          className="record-card"
+                          style={{ borderLeftColor: 'var(--success)', marginBottom: '0.5rem' }}
+                        >
+                          <div className="record-title">
+                            <span>
+                              {m.blood_group} · {m.name}
+                            </span>
+                            <span className="badge badge-teal">Score {m.score}</span>
+                          </div>
+                          <p className="record-meta">{m.city || 'City not set'}</p>
+                          <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+                            {m.reasons.map((reason, i) => (
+                              <li key={i}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      <p className="disclaimer">
+                        These scores reflect blood-group compatibility and
+                        stated availability only — not a medical guarantee.
+                        Final crossmatching always happens at the donation
+                        facility.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </DashboardLayout>
   );
 }
