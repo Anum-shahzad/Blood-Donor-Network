@@ -4,15 +4,24 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { validateRequestPayload, MANUAL_REQUEST_STATUSES, CLOSED_REQUEST_STATUSES } from '../utils/validation.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
+import { acceptRequest, declineRequest } from '../services/donorCommitment.js';
 
 const router = Router();
 
-// Every route here requires a logged-in requester — a donor or admin token
-// gets a 403.
-router.use(authenticate, authorize('requester'));
+// Every route in this file requires a logged-in user of SOME role — but not
+// the same role for every route, since donor accept/decline live at this
+// same /api/requests/:id/... path alongside the original requester-only
+// routes. authenticate() runs for everything; authorize(role) is applied
+// per-route below instead of once for the whole router, so a donor token
+// can reach the donor routes without being blocked before Express even
+// checks which route matches (a path-less router.use(authorize(...)) runs
+// for every request under this mount regardless of whether a route further
+// down matches, which is what caused that exact bug during Phase 1
+// testing — see git history / PR notes for the reproduction).
+router.use(authenticate);
 
-// POST /api/requests — create a new blood request.
-router.post('/', async (req, res, next) => {
+// POST /api/requests — create a new blood request. Requester only.
+router.post('/', authorize('requester'), async (req, res, next) => {
   try {
     const errors = validateRequestPayload(req.body);
     if (errors.length > 0) {
@@ -51,7 +60,7 @@ router.post('/', async (req, res, next) => {
 
 // GET /api/requests/mine — a requester only ever sees their own requests,
 // never anyone else's.
-router.get('/mine', async (req, res, next) => {
+router.get('/mine', authorize('requester'), async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT id, blood_group, units_needed, hospital_name, city, urgency,
@@ -70,7 +79,7 @@ router.get('/mine', async (req, res, next) => {
 // PATCH /api/requests/:id/status — a requester closing out their own
 // request as fulfilled or cancelled. pending/verified/matched are set by
 // the system (verification, matching), never by this endpoint.
-router.patch('/:id/status', async (req, res, next) => {
+router.patch('/:id/status', authorize('requester'), async (req, res, next) => {
   try {
     const requestId = Number(req.params.id);
     if (!Number.isInteger(requestId)) {
@@ -104,7 +113,7 @@ router.patch('/:id/status', async (req, res, next) => {
 // GET /api/requests/:id/matches — potential donor matches for one of the
 // requester's own requests. Never exposes another requester's request, even
 // to probe whether it exists (404, not 403, if it's not theirs).
-router.get('/:id/matches', async (req, res, next) => {
+router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
   try {
     const requestId = Number(req.params.id);
     if (!Number.isInteger(requestId)) {
@@ -138,6 +147,44 @@ router.get('/:id/matches', async (req, res, next) => {
       match_count: matches.length,
       matches,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+function parseRequestId(req, res) {
+  const requestId = Number(req.params.id);
+  if (!Number.isInteger(requestId)) {
+    res.status(400).json({ error: 'Invalid request id' });
+    return null;
+  }
+  return requestId;
+}
+
+// POST /api/requests/:id/accept — donor accepts a compatible, open request.
+// All eligibility/availability/compatibility checks and the atomic
+// commitment write happen in services/donorCommitment.js.
+router.post('/:id/accept', authorize('donor'), async (req, res, next) => {
+  try {
+    const requestId = parseRequestId(req, res);
+    if (requestId === null) return;
+
+    const result = await acceptRequest(req.user.id, requestId);
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/requests/:id/decline — donor declines a compatible request.
+// Does not change donor state; only records the response.
+router.post('/:id/decline', authorize('donor'), async (req, res, next) => {
+  try {
+    const requestId = parseRequestId(req, res);
+    if (requestId === null) return;
+
+    const result = await declineRequest(req.user.id, requestId);
+    res.json({ status: 'ok', ...result });
   } catch (err) {
     next(err);
   }

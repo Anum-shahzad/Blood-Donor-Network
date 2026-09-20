@@ -74,4 +74,4 @@ export function rankDonorCandidates(candidates, request) {
     .sort((a, b) => b.score - a.score);
 }
 
-export { DONATION_COOLDOWN_MONTHS };
+export { DONATION_COOLDOWN_MONTHS, isEligibleByRecency };
