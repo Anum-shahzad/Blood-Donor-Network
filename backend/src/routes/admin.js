@@ -67,7 +67,8 @@ router.get('/donors', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT u.id, u.name, u.email, u.city,
-              dp.blood_group, dp.is_available, dp.is_blood_group_verified, dp.last_donation_date
+              dp.blood_group, dp.is_available, dp.is_blood_group_verified, dp.last_donation_date,
+              dp.current_status, dp.committed_request_id
        FROM donor_profiles dp
        JOIN users u ON u.id = dp.user_id
        ORDER BY dp.is_blood_group_verified ASC, u.name ASC`

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { BLOOD_GROUPS } from '../utils/validation.js';
+import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
+import { cancelCommitment } from '../services/donorCommitment.js';
 
 const router = Router();
 
@@ -14,7 +16,9 @@ router.get('/me', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.city,
-              dp.blood_group, dp.last_donation_date, dp.is_available, dp.is_blood_group_verified
+              dp.blood_group, dp.last_donation_date, dp.is_available, dp.is_blood_group_verified,
+              dp.current_status, dp.committed_request_id, dp.commitment_started_at,
+              dp.commitment_ended_at, dp.cooldown_until
        FROM users u
        LEFT JOIN donor_profiles dp ON dp.user_id = u.id
        WHERE u.id = ?`,
@@ -25,6 +29,64 @@ router.get('/me', async (req, res, next) => {
       return res.status(404).json({ error: 'Donor account not found' });
     }
     res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/donors/matches — compatible, currently-open emergency requests
+// this donor hasn't already responded to. Only meaningful while the donor
+// is AVAILABLE; a committed/en-route/etc. donor gets an empty list rather
+// than requests they're not allowed to accept anyway.
+router.get('/matches', async (req, res, next) => {
+  try {
+    const [donorRows] = await pool.query(
+      'SELECT blood_group, current_status, is_available FROM donor_profiles WHERE user_id = ?',
+      [req.user.id]
+    );
+    const donorProfile = donorRows[0];
+
+    if (!donorProfile || !donorProfile.blood_group) {
+      return res.json({ matches: [], reason: 'Set your blood group first' });
+    }
+    if (donorProfile.current_status !== 'AVAILABLE' || !donorProfile.is_available) {
+      return res.json({ matches: [], reason: `You are currently ${donorProfile.current_status.toLowerCase()}` });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
+              r.required_by, r.status, r.created_at
+       FROM requests r
+       WHERE r.is_verified = TRUE
+         AND r.status IN ('verified', 'matched')
+         AND NOT EXISTS (
+           SELECT 1 FROM request_responses rr
+           WHERE rr.request_id = r.id AND rr.donor_id = ?
+         )
+       ORDER BY
+         FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
+         r.created_at ASC`,
+      [req.user.id]
+    );
+
+    const matches = rows.filter((r) =>
+      getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group)
+    );
+
+    res.json({ matches, match_count: matches.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/donors/me/commitment/cancel — back out of an accepted request
+// before travelling. See services/donorCommitment.js for the transaction
+// and services/matching/donorState.js for why this only works from
+// COMMITTED.
+router.post('/me/commitment/cancel', async (req, res, next) => {
+  try {
+    const result = await cancelCommitment(req.user.id);
+    res.json({ status: 'ok', ...result });
   } catch (err) {
     next(err);
   }
