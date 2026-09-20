@@ -498,6 +498,108 @@ button, input, select {
 .hero-status-dot.is-up { background: var(--success); box-shadow: 0 0 0 3px rgba(40, 188, 89, 0.25); }
 .hero-status-dot.is-down { background: #f04438; box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.25); }
 
+/* ==========================================================================
+   Auth screens (Login / Signup) — full-bleed photo with a centered glass card
+   ========================================================================== */
+.auth-screen {
+  min-height: calc(100vh - 65px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.25rem;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  isolation: isolate;
+}
+
+.auth-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(59, 4, 11, 0.86) 0%, rgba(59, 4, 11, 0.72) 100%);
+  z-index: -1;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  box-shadow: var(--shadow-lg);
+  color: #fff;
+}
+
+.auth-card-brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.auth-card h1 {
+  color: #fff;
+  text-align: center;
+  font-size: 1.6rem;
+}
+
+.auth-card-subtext {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.92rem;
+  margin-bottom: 1.75rem;
+}
+
+.auth-card .field {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.auth-card .field input,
+.auth-card .field select {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.auth-card .field input:focus,
+.auth-card .field select:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+.auth-card .segmented-option {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.auth-card .segmented-option.is-active {
+  background: #fff;
+  border-color: #fff;
+  color: var(--primary-dark);
+}
+
+.auth-card .error-banner {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.auth-card-footer {
+  text-align: center;
+  margin-top: 1.25rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.auth-card-footer a {
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .auth-card { padding: 1.5rem; }
+}
+
 .section {
   padding: 3.5rem 1.5rem;
   max-width: 1080px;
