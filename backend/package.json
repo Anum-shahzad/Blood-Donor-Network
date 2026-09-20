@@ -8,7 +8,9 @@
     "dev": "nodemon src/server.js",
     "test:compatibility": "node src/services/matching/compatibility.selfcheck.js",
     "test:matching": "node src/services/matching/donorMatching.selfcheck.js",
-    "test:auth": "node src/services/authService.selfcheck.js"
+    "test:donor-state": "node src/services/matching/donorState.selfcheck.js",
+    "test:auth": "node src/services/authService.selfcheck.js",
+    "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
