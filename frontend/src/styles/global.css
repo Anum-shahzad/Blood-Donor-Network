@@ -280,6 +280,7 @@ button, input, select {
 /* Segmented role selector (donor / requester) */
 .segmented {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin-bottom: 1.1rem;
 }
@@ -302,6 +303,13 @@ button, input, select {
   background: var(--accent-light);
   border-color: var(--primary);
   color: var(--primary-dark);
+}
+
+.segmented-option[data-level='critical'].is-active,
+.segmented-option[data-level='high'].is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
 }
 
 /* ==========================================================================
