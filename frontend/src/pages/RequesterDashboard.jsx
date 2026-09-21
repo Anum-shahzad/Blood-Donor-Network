@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import ChatPanel from '../components/ChatPanel.jsx';
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
@@ -39,6 +40,7 @@ export default function RequesterDashboard() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [openChats, setOpenChats] = useState({});
 
   useEffect(() => {
     if (!user) {
@@ -69,6 +71,10 @@ export default function RequesterDashboard() {
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  function toggleChat(requestId) {
+    setOpenChats((c) => ({ ...c, [requestId]: !c[requestId] }));
   }
 
   function update(field) {
@@ -224,6 +230,11 @@ export default function RequesterDashboard() {
                   <button onClick={() => loadMatches(r.id)} className="btn-text">
                     View matches
                   </button>
+                  {r.status === 'donor_accepted' && (
+                    <button onClick={() => toggleChat(r.id)} className="btn-text">
+                      {openChats[r.id] ? 'Hide chat' : 'Chat with donor'}
+                    </button>
+                  )}
                   <button onClick={() => updateStatus(r.id, 'fulfilled')} className="btn-text">
                     Mark fulfilled
                   </button>
@@ -231,6 +242,14 @@ export default function RequesterDashboard() {
                     Cancel
                   </button>
                 </div>
+              )}
+
+              {r.status === 'donor_accepted' && openChats[r.id] && (
+                <ChatPanel
+                  requestId={r.id}
+                  currentUserId={user.id}
+                  onClose={() => toggleChat(r.id)}
+                />
               )}
 
               {(data || err) && (
