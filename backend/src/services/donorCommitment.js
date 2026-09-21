@@ -20,6 +20,7 @@ import {
 } from './matching/donorState.js';
 import { canDonorGiveToRecipient } from './matching/compatibility.js';
 import { isEligibleByRecency, DONATION_COOLDOWN_MONTHS } from './matching/donorMatching.js';
+import { upsertConversation } from './chatService.js';
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -101,6 +102,15 @@ export async function acceptRequest(donorId, requestId) {
        ON DUPLICATE KEY UPDATE status = 'accepted', responded_at = NOW()`,
       [requestId, donorId]
     );
+
+    // Open the private donor<->requester chat in the same transaction, so a
+    // successful accept always has a conversation and a failed one leaves
+    // nothing behind. Chat is coordination only — it does not affect state.
+    await upsertConversation(conn, {
+      requestId,
+      donorId,
+      requesterId: request.requester_id,
+    });
 
     await conn.commit();
     return { request_id: requestId, request_status: newRequestStatus, donor_status: 'COMMITTED' };
