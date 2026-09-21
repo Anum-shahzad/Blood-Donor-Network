@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import ChatPanel from '../components/ChatPanel.jsx';
 import { DropletIcon, MapPinIcon, CalendarIcon, ShieldCheckIcon } from '../components/icons.jsx';
 
 const URGENCY_BADGE = {
@@ -34,6 +35,7 @@ export default function DonorDashboard() {
   const [toggling, setToggling] = useState(false);
   const [actingOn, setActingOn] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const user = getUser();
 
   useEffect(() => {
@@ -189,10 +191,20 @@ export default function DonorDashboard() {
                   authorized hospital or blood bank to donate.
                 </p>
                 <div className="record-actions">
+                  <button onClick={() => setShowChat((v) => !v)} className="btn-text">
+                    {showChat ? 'Hide chat' : 'Chat with requester'}
+                  </button>
                   <button onClick={cancelCommitment} disabled={cancelling} className="btn-text">
                     {cancelling ? 'Cancelling...' : 'Cancel commitment'}
                   </button>
                 </div>
+                {showChat && (
+                  <ChatPanel
+                    requestId={profile.committed_request_id}
+                    currentUserId={user.id}
+                    onClose={() => setShowChat(false)}
+                  />
+                )}
               </div>
             </>
           )}
