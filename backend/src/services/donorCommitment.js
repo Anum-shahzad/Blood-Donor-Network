@@ -53,6 +53,10 @@ export async function acceptRequest(donorId, requestId) {
       throw httpError(request ? 409 : 404, requestCheck.reason);
     }
 
+    if (request.required_by && new Date(request.required_by).getTime() < Date.now()) {
+      throw httpError(409, 'This request has passed its needed-by time');
+    }
+
     const donorCheck = canDonorAccept(donorProfile);
     if (!donorCheck.ok) {
       throw httpError(donorProfile ? 409 : 404, donorCheck.reason);
@@ -133,6 +137,17 @@ export async function declineRequest(donorId, requestId) {
     throw httpError(404, 'Request not found');
   }
 
+  // A donor who is currently committed to this very request must cancel the
+  // commitment instead — "declining" it would leave them locked to it while
+  // the response row says they said no.
+  const [donorRows] = await pool.query(
+    'SELECT committed_request_id FROM donor_profiles WHERE user_id = ?',
+    [donorId]
+  );
+  if (donorRows[0] && Number(donorRows[0].committed_request_id) === Number(requestId)) {
+    throw httpError(409, 'You are committed to this request — cancel your commitment instead');
+  }
+
   await pool.query(
     `INSERT INTO request_responses (request_id, donor_id, status, responded_at)
      VALUES (?, ?, 'declined', NOW())
@@ -170,6 +185,13 @@ export async function cancelCommitment(donorId) {
       await conn.query(
         `UPDATE requests SET status = ? WHERE id = ? AND status = 'donor_accepted'`,
         [newRequestStatus, requestId]
+      );
+      // Record the withdrawal so this donor's response no longer reads
+      // 'accepted' for a request they backed out of.
+      await conn.query(
+        `UPDATE request_responses SET status = 'declined', responded_at = NOW()
+          WHERE request_id = ? AND donor_id = ?`,
+        [requestId, donorId]
       );
     }
 

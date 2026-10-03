@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import { formatDateTime, humanizeStatus } from '../lib/format.js';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -12,13 +13,9 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
     loadRequests();
     loadDonors();
-  }, [navigate]);
+  }, []);
 
   function loadRequests() {
     apiGet('/api/admin/requests').then(setRequests).catch((err) => setError(err.message));
@@ -110,7 +107,8 @@ export default function AdminDashboard() {
               </span>
             </div>
             <p className="record-meta">
-              {r.requester_email} · {r.hospital_name}, {r.city} · Status: {r.status}
+              {r.requester_email} · {r.hospital_name}, {r.city} · Status: {humanizeStatus(r.status)}
+              {r.required_by ? ` · Needed by ${formatDateTime(r.required_by)}` : ''}
             </p>
             <div className="record-actions">
               <button onClick={() => verifyRequest(r.id, !r.is_verified)} className="btn-text">

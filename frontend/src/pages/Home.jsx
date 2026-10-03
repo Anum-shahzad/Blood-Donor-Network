@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiGet } from '../api/client.js';
+import { getUser, dashboardPathFor } from '../auth/session.js';
+import EmergencyWidget from '../components/landing/EmergencyWidget.jsx';
+import BloodCompatibility from '../components/landing/BloodCompatibility.jsx';
 import '../styles/landing.css';
 
 export default function Home() {
   const pageRef = useRef(null);
   const [navOpen, setNavOpen] = useState(false);
-  const [connected, setConnected] = useState(null);
+  const [donorAvailable, setDonorAvailable] = useState(true);
 
-  // Live backend status, shown in the hero — same check the app already
-  // performs, wired into the prototype's status-dot/status-line markup.
-  useEffect(() => {
-    apiGet('/api/health')
-      .then((data) => setConnected(data.db === 'connected'))
-      .catch(() => setConnected(false));
-  }, []);
+  // Call-to-action targets: guests go to signup with the right role preselected,
+  // logged-in people go straight to their own dashboard.
+  const user = getUser();
+  const ctaTo = (role) => (user ? dashboardPathFor(user.role) : `/signup?role=${role}`);
 
   // Single orchestrated reveal-on-scroll pass, ported from the prototype's
   // script.js into a React effect (IntersectionObserver over .lp-reveal).
@@ -67,16 +66,18 @@ export default function Home() {
             </span>
             Blood Donor Network
           </a>
-          <nav className="lp-main-nav" aria-label="Primary">
+          <nav className="lp-main-nav" aria-label="Primary" id="lp-main-nav">
             <a href="#how-it-works" onClick={closeNav}>How it works</a>
+            <a href="#compatibility" onClick={closeNav}>Blood types</a>
             <a href="#donors" onClick={closeNav}>For donors</a>
             <a href="#patients" onClick={closeNav}>For patients</a>
             <a href="#safety" onClick={closeNav}>Safety</a>
             <a href="#about" onClick={closeNav}>About</a>
+            <Link to="/emergency" className="lp-nav-emergency" onClick={closeNav}>Emergency</Link>
           </nav>
           <div className="lp-header-actions">
-            <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-sm">
-              Find a donor
+            <Link to={ctaTo('requester')} className="lp-btn lp-btn-primary lp-btn-sm">
+              {user ? 'My dashboard' : 'Find a donor'}
             </Link>
             <button
               className="lp-nav-toggle"
@@ -106,28 +107,23 @@ export default function Home() {
           </div>
           <div className="lp-container">
             <div className="lp-hero-overlay-card lp-reveal">
-              <p className="lp-hero-eyebrow">Sukkur, Pakistan</p>
+              <p className="lp-hero-eyebrow">Blood donor coordination network</p>
               <h1>When every minute matters, finding a donor shouldn&rsquo;t depend on who you know.</h1>
               <p className="lp-hero-sub">
                 Blood Donor Network connects people who urgently need blood with available, compatible
                 donors nearby — through one coordinated network, not a chain of phone calls.
               </p>
               <div className="lp-hero-actions">
-                <Link to="/signup" className="lp-btn lp-btn-primary">
+                <Link to={ctaTo('requester')} className="lp-btn lp-btn-primary">
                   Find blood
                 </Link>
-                <Link to="/signup" className="lp-btn lp-btn-secondary-light">
+                <Link to={ctaTo('donor')} className="lp-btn lp-btn-secondary-light">
                   Become a donor
                 </Link>
               </div>
-              {connected !== null && (
-                <p className="lp-status-line">
-                  <span className={`lp-status-dot${connected ? '' : ' lp-is-down'}`}></span>
-                  {connected ? 'System status: operational' : 'System status: having trouble reaching the server'}
-                </p>
-              )}
             </div>
           </div>
+          <EmergencyWidget />
         </section>
 
         {/* PROBLEM */}
@@ -296,7 +292,7 @@ export default function Home() {
                 <li>See relevant, available donors as they&rsquo;re found</li>
                 <li>Reach out to a suitable donor directly</li>
               </ul>
-              <Link to="/signup" className="lp-btn lp-btn-primary">
+              <Link to={ctaTo('requester')} className="lp-btn lp-btn-primary">
                 Find blood
               </Link>
             </div>
@@ -305,7 +301,7 @@ export default function Home() {
                 <p className="lp-ui-panel-title">New blood request</p>
                 <div className="lp-ui-field"><span>Blood type</span><strong>O+</strong></div>
                 <div className="lp-ui-field"><span>Urgency</span><strong className="lp-pill lp-pill-urgent">High</strong></div>
-                <div className="lp-ui-field"><span>Hospital</span><strong>City Hospital, Sukkur</strong></div>
+                <div className="lp-ui-field"><span>Hospital</span><strong>City General Hospital</strong></div>
                 <div className="lp-ui-field"><span>Contact</span><strong>Add phone number</strong></div>
                 <button className="lp-ui-submit" type="button">Submit request</button>
               </div>
@@ -320,8 +316,20 @@ export default function Home() {
               <div className="lp-ui-panel lp-ui-panel-dark">
                 <p className="lp-ui-panel-title">Available to donate</p>
                 <div className="lp-ui-field"><span>Blood type</span><strong>A+</strong></div>
-                <div className="lp-ui-field"><span>Location</span><strong>Sukkur</strong></div>
-                <div className="lp-ui-field"><span>Availability</span><strong className="lp-pill lp-pill-available">Available</strong></div>
+                <div className="lp-ui-field"><span>Location</span><strong>Near you</strong></div>
+                <div className="lp-ui-field">
+                  <span>Availability</span>
+                  <button
+                    type="button"
+                    className={`lp-switch${donorAvailable ? ' lp-on' : ''}`}
+                    role="switch"
+                    aria-checked={donorAvailable}
+                    onClick={() => setDonorAvailable((v) => !v)}
+                  >
+                    <i></i>
+                    {donorAvailable ? 'Available' : 'Not available'}
+                  </button>
+                </div>
                 <button className="lp-ui-submit lp-ui-submit-light" type="button">Review nearby requests</button>
               </div>
             </div>
@@ -339,9 +347,18 @@ export default function Home() {
                 <li>See requests near you that match your type</li>
                 <li>Respond when you&rsquo;re able to help</li>
               </ul>
-              <Link to="/signup" className="lp-btn lp-btn-secondary">
+              <Link to={ctaTo('donor')} className="lp-btn lp-btn-secondary">
                 Become a donor
               </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* BLOOD COMPATIBILITY */}
+        <section className="lp-section lp-compat-section" id="compatibility">
+          <div className="lp-container">
+            <div className="lp-reveal">
+              <BloodCompatibility />
             </div>
           </div>
         </section>
@@ -425,10 +442,10 @@ export default function Home() {
           <div className="lp-container lp-final-cta-inner lp-reveal">
             <h2>Be part of the network when someone needs it most.</h2>
             <div className="lp-hero-actions">
-              <Link to="/signup" className="lp-btn lp-btn-primary">
+              <Link to={ctaTo('requester')} className="lp-btn lp-btn-primary">
                 Find blood
               </Link>
-              <Link to="/signup" className="lp-btn lp-btn-secondary">
+              <Link to={ctaTo('donor')} className="lp-btn lp-btn-secondary">
                 Become a donor
               </Link>
             </div>
@@ -444,15 +461,19 @@ export default function Home() {
           </div>
           <nav className="lp-footer-nav" aria-label="Footer">
             <a href="#how-it-works">How it works</a>
-            <Link to="/signup">Find blood</Link>
-            <Link to="/signup">Become a donor</Link>
+            <Link to={ctaTo('requester')}>Find blood</Link>
+            <Link to={ctaTo('donor')}>Become a donor</Link>
             <a href="#about">About</a>
             <a href="#safety">Safety &amp; privacy</a>
-            <Link to="/login">Log in</Link>
+            {user ? (
+              <Link to={dashboardPathFor(user.role)}>My dashboard</Link>
+            ) : (
+              <Link to="/login">Log in</Link>
+            )}
           </nav>
         </div>
         <div className="lp-container">
-          <p className="lp-footer-copy">&copy; 2026 Blood Donor Network. Sukkur, Pakistan.</p>
+          <p className="lp-footer-copy">&copy; 2026 Blood Donor Network.</p>
         </div>
       </footer>
     </div>

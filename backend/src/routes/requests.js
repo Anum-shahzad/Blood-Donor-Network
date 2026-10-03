@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
-import { validateRequestPayload, MANUAL_REQUEST_STATUSES, CLOSED_REQUEST_STATUSES } from '../utils/validation.js';
+import { validateRequestPayload, MANUAL_REQUEST_STATUSES } from '../utils/validation.js';
+import { closeRequestByRequester } from '../services/requestLifecycle.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 import { acceptRequest, declineRequest } from '../services/donorCommitment.js';
@@ -48,7 +49,9 @@ router.post('/', authorize('requester'), async (req, res, next) => {
         hospital_name.trim(),
         city.trim(),
         urgency,
-        required_by || null,
+        // Stored as UTC. The frontend sends an ISO timestamp with its zone,
+        // so the deadline means the same instant for everyone.
+        required_by ? new Date(required_by) : null,
       ]
     );
 
@@ -91,20 +94,9 @@ router.patch('/:id/status', authorize('requester'), async (req, res, next) => {
       return res.status(400).json({ error: `status must be one of: ${MANUAL_REQUEST_STATUSES.join(', ')}` });
     }
 
-    const [rows] = await pool.query(
-      'SELECT status FROM requests WHERE id = ? AND requester_id = ?',
-      [requestId, req.user.id]
-    );
-    const existing = rows[0];
-    if (!existing) {
-      return res.status(404).json({ error: 'Request not found' });
-    }
-    if (CLOSED_REQUEST_STATUSES.includes(existing.status)) {
-      return res.status(409).json({ error: `Request is already ${existing.status} and cannot be changed` });
-    }
-
-    await pool.query('UPDATE requests SET status = ? WHERE id = ?', [status, requestId]);
-    res.json({ status: 'ok', new_status: status });
+    // Also releases any donor still committed to this request.
+    const result = await closeRequestByRequester(requestId, req.user.id, status);
+    res.json({ status: 'ok', ...result });
   } catch (err) {
     next(err);
   }

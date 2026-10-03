@@ -23,25 +23,50 @@ router.post('/signup', async (req, res, next) => {
     }
 
     const passwordHash = await hashPassword(password);
-    const [result] = await pool.query(
-      'INSERT INTO users (name, email, password_hash, role, phone, city) VALUES (?, ?, ?, ?, ?, ?)',
-      [name.trim(), normalizedEmail, passwordHash, role, phone || null, city || null]
-    );
-    const userId = result.insertId;
 
-    // Donors get their profile row created immediately if they gave a blood
-    // group at signup, so PATCH /api/donors/me/availability works right away.
-    if (role === 'donor' && blood_group) {
-      await pool.query(
-        'INSERT INTO donor_profiles (user_id, blood_group, last_donation_date) VALUES (?, ?, ?)',
-        [userId, blood_group, last_donation_date || null]
+    // User + donor profile are written in one transaction so a failure can
+    // never leave a donor account with no profile row (which would break
+    // matching and the availability toggle).
+    const conn = await pool.getConnection();
+    let userId;
+    try {
+      await conn.beginTransaction();
+      const [result] = await conn.query(
+        'INSERT INTO users (name, email, password_hash, role, phone, city) VALUES (?, ?, ?, ?, ?, ?)',
+        [name.trim(), normalizedEmail, passwordHash, role, phone ? phone.trim() : null, city.trim()]
       );
+      userId = result.insertId;
+
+      if (role === 'donor') {
+        await conn.query(
+          'INSERT INTO donor_profiles (user_id, blood_group, last_donation_date) VALUES (?, ?, ?)',
+          [userId, blood_group, last_donation_date || null]
+        );
+      }
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      // Two signups with the same email at the same instant both pass the
+      // SELECT above; the unique key catches the loser.
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'An account with this email already exists' });
+      }
+      throw err;
+    } finally {
+      conn.release();
     }
 
     const token = signToken({ id: userId, role, email: normalizedEmail });
     res.status(201).json({
       token,
-      user: { id: userId, name: name.trim(), email: normalizedEmail, role, phone: phone || null, city: city || null },
+      user: {
+        id: userId,
+        name: name.trim(),
+        email: normalizedEmail,
+        role,
+        phone: phone ? phone.trim() : null,
+        city: city.trim(),
+      },
     });
   } catch (err) {
     next(err);

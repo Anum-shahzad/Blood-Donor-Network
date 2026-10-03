@@ -13,7 +13,7 @@ router.get('/requests', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
-              r.status, r.is_verified, r.created_at,
+              r.required_by, r.status, r.is_verified, r.created_at,
               u.name AS requester_name, u.email AS requester_email
        FROM requests r
        JOIN users u ON u.id = r.requester_id

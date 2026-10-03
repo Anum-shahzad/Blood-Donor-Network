@@ -10,7 +10,12 @@ router.get('/', async (req, res) => {
     await pool.query('SELECT 1');
     res.json({ status: 'ok', db: 'connected' });
   } catch (err) {
-    res.status(500).json({ status: 'degraded', db: 'disconnected', message: err.message });
+    res.status(500).json({
+      status: 'degraded',
+      db: 'disconnected',
+      // Internal error text can reveal host/user details — dev only.
+      ...(process.env.NODE_ENV === 'production' ? {} : { message: err.message }),
+    });
   }
 });
 

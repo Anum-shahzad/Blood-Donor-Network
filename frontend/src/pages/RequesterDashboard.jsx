@@ -4,6 +4,11 @@ import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import { formatDateTime, humanizeStatus, localInputToIso, nowForLocalInput } from '../lib/format.js';
+
+// Requests refresh on their own so a donor accepting shows up (and the chat
+// button appears) without the requester having to reload the page.
+const REFRESH_MS = 20 * 1000;
 
 const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
@@ -43,12 +48,12 @@ export default function RequesterDashboard() {
   const [openChats, setOpenChats] = useState({});
 
   useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
     loadRequests();
-  }, [navigate]);
+    const t = setInterval(() => {
+      if (!document.hidden) loadRequests();
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, []);
 
   function loadRequests() {
     apiGet('/api/requests/mine')
@@ -65,8 +70,16 @@ export default function RequesterDashboard() {
 
   async function updateStatus(requestId, status) {
     setError('');
+    const verb = status === 'fulfilled' ? 'mark this request as fulfilled' : 'cancel this request';
+    if (!window.confirm(`Are you sure you want to ${verb}? This can't be undone.`)) return;
     try {
       await apiPatch(`/api/requests/${requestId}/status`, { status });
+      // Any matches/chat we were showing for it are now out of date.
+      setMatchesByRequest((m) => {
+        const { [requestId]: _removed, ...rest } = m;
+        return rest;
+      });
+      setOpenChats((c) => ({ ...c, [requestId]: false }));
       loadRequests();
     } catch (err) {
       setError(err.message);
@@ -89,7 +102,9 @@ export default function RequesterDashboard() {
       await apiPost('/api/requests', {
         ...form,
         units_needed: Number(form.units_needed),
-        required_by: form.required_by || undefined,
+        // datetime-local has no time zone; send a real instant so the deadline
+        // means the same moment on the server.
+        required_by: localInputToIso(form.required_by),
       });
       setForm(emptyForm);
       loadRequests();
@@ -187,8 +202,13 @@ export default function RequesterDashboard() {
             </div>
           </label>
           <label className="field">
-            Needed by (optional)
-            <input type="datetime-local" value={form.required_by} onChange={update('required_by')} />
+            Needed by (leave empty if no fixed deadline)
+            <input
+              type="datetime-local"
+              min={nowForLocalInput()}
+              value={form.required_by}
+              onChange={update('required_by')}
+            />
           </label>
 
           <button type="submit" disabled={submitting} className="btn btn-primary btn-block">
@@ -221,14 +241,20 @@ export default function RequesterDashboard() {
                 <span className={`badge ${urgencyBadgeClass(r.urgency)}`}>{r.urgency}</span>
               </div>
               <p className="record-meta">
-                {r.hospital_name}, {r.city} · Status: {r.status} · Verified:{' '}
+                {r.hospital_name}, {r.city} · Status: {humanizeStatus(r.status)} · Verified:{' '}
                 {r.is_verified ? 'Yes' : 'Not yet'}
+                {r.required_by ? ` · Needed by ${formatDateTime(r.required_by)}` : ''}
               </p>
+              {!closed && !r.is_verified && (
+                <p className="record-meta">
+                  Waiting for admin verification — donors can&rsquo;t see this request until it&rsquo;s verified.
+                </p>
+              )}
 
               {!closed && (
                 <div className="record-actions">
                   <button onClick={() => loadMatches(r.id)} className="btn-text">
-                    View matches
+                    {data ? 'Refresh matches' : 'View matches'}
                   </button>
                   {r.status === 'donor_accepted' && (
                     <button onClick={() => toggleChat(r.id)} className="btn-text">

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
-import { saveSession, dashboardPathFor } from '../auth/session.js';
+import { saveSession, getUser, dashboardPathFor } from '../auth/session.js';
+import { todayForDateInput } from '../lib/format.js';
 import TopBar from '../components/TopBar.jsx';
 import BrandMark from '../components/BrandMark.jsx';
 
@@ -9,14 +10,20 @@ const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 
 export default function Signup() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Links from the landing page preselect the role (?role=donor|requester)
+  // and the blood group (?bloodType=O-) so the person doesn't start from zero.
+  const roleParam = params.get('role');
+  const bloodParam = params.get('bloodType');
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
-    role: 'donor',
+    role: roleParam === 'requester' ? 'requester' : 'donor',
     phone: '',
     city: '',
-    blood_group: '',
+    blood_group: BLOOD_GROUPS.includes(bloodParam) ? bloodParam : '',
+    last_donation_date: '',
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -29,13 +36,29 @@ export default function Signup() {
     setForm((f) => ({ ...f, role }));
   }
 
+  // Already signed in: no reason to see the signup form again.
+  const existing = getUser();
+  if (existing) return <Navigate to={dashboardPathFor(existing.role)} replace />;
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setSubmitting(true);
     try {
-      const payload = { ...form };
-      if (payload.role !== 'donor') delete payload.blood_group;
+      const payload = {
+        ...form,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        city: form.city.trim(),
+      };
+      if (!payload.phone) delete payload.phone;
+      if (payload.role !== 'donor') {
+        delete payload.blood_group;
+        delete payload.last_donation_date;
+      } else if (!payload.last_donation_date) {
+        delete payload.last_donation_date;
+      }
       const data = await apiPost('/api/auth/signup', payload);
       saveSession(data.token, data.user);
       navigate(dashboardPathFor(data.user.role));
@@ -113,13 +136,25 @@ export default function Signup() {
               </label>
             )}
 
+            {form.role === 'donor' && (
+              <label className="field">
+                Last donation date (optional)
+                <input
+                  type="date"
+                  max={todayForDateInput()}
+                  value={form.last_donation_date}
+                  onChange={update('last_donation_date')}
+                />
+              </label>
+            )}
+
             <label className="field">
-              Phone
-              <input value={form.phone} onChange={update('phone')} />
+              Phone (optional)
+              <input type="tel" value={form.phone} onChange={update('phone')} />
             </label>
             <label className="field">
               City
-              <input value={form.city} onChange={update('city')} />
+              <input value={form.city} onChange={update('city')} required minLength={2} />
             </label>
 
             <button type="submit" disabled={submitting} className="btn btn-primary btn-block">

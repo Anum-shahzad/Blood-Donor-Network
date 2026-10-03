@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
-import { BLOOD_GROUPS } from '../utils/validation.js';
+import { BLOOD_GROUPS, validateDonationDate } from '../utils/validation.js';
+import { EFFECTIVE_EXPIRY_SQL, defaultTtlHours } from '../services/requestLifecycle.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { cancelCommitment } from '../services/donorCommitment.js';
 
@@ -49,8 +50,11 @@ router.get('/matches', async (req, res, next) => {
     if (!donorProfile || !donorProfile.blood_group) {
       return res.json({ matches: [], reason: 'Set your blood group first' });
     }
-    if (donorProfile.current_status !== 'AVAILABLE' || !donorProfile.is_available) {
-      return res.json({ matches: [], reason: `You are currently ${donorProfile.current_status.toLowerCase()}` });
+    if (donorProfile.current_status !== 'AVAILABLE') {
+      return res.json({ matches: [], reason: `You are currently ${donorProfile.current_status.toLowerCase().replace(/_/g, ' ')}` });
+    }
+    if (!donorProfile.is_available) {
+      return res.json({ matches: [], reason: 'You have marked yourself unavailable — turn availability on to see requests' });
     }
 
     const [rows] = await pool.query(
@@ -59,6 +63,7 @@ router.get('/matches', async (req, res, next) => {
        FROM requests r
        WHERE r.is_verified = TRUE
          AND r.status IN ('verified', 'matched')
+         AND ${EFFECTIVE_EXPIRY_SQL} > NOW()
          AND NOT EXISTS (
            SELECT 1 FROM request_responses rr
            WHERE rr.request_id = r.id AND rr.donor_id = ?
@@ -66,7 +71,7 @@ router.get('/matches', async (req, res, next) => {
        ORDER BY
          FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
          r.created_at ASC`,
-      [req.user.id]
+      [defaultTtlHours(), req.user.id]
     );
 
     const matches = rows.filter((r) =>
@@ -100,11 +105,33 @@ router.put('/me', async (req, res, next) => {
     if (!BLOOD_GROUPS.includes(blood_group)) {
       return res.status(400).json({ error: `blood_group must be one of: ${BLOOD_GROUPS.join(', ')}` });
     }
+    if (last_donation_date) {
+      const dateError = validateDonationDate(last_donation_date);
+      if (dateError) {
+        return res.status(400).json({ error: dateError });
+      }
+    }
 
+    const [existingRows] = await pool.query(
+      'SELECT blood_group, current_status FROM donor_profiles WHERE user_id = ?',
+      [req.user.id]
+    );
+    const existing = existingRows[0];
+    if (existing && existing.blood_group !== blood_group && existing.current_status !== 'AVAILABLE') {
+      // Changing group mid-commitment could leave a donor committed to a
+      // request they're no longer compatible with.
+      return res.status(409).json({ error: 'You cannot change your blood group while committed to an emergency' });
+    }
+
+    // Order matters in ON DUPLICATE KEY UPDATE: is_blood_group_verified is
+    // evaluated first, while blood_group still holds the OLD value, so a
+    // changed group drops back to unverified instead of keeping a stale
+    // admin verification.
     await pool.query(
       `INSERT INTO donor_profiles (user_id, blood_group, last_donation_date)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE
+         is_blood_group_verified = IF(blood_group <> VALUES(blood_group), FALSE, is_blood_group_verified),
          blood_group = VALUES(blood_group),
          last_donation_date = VALUES(last_donation_date)`,
       [req.user.id, blood_group, last_donation_date || null]

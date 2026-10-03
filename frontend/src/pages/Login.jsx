@@ -1,23 +1,28 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { apiPost } from '../api/client.js';
-import { saveSession, dashboardPathFor } from '../auth/session.js';
+import { saveSession, getUser, dashboardPathFor } from '../auth/session.js';
 import TopBar from '../components/TopBar.jsx';
 import BrandMark from '../components/BrandMark.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const sessionExpired = params.get('expired') === '1';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const existing = getUser();
+  if (existing) return <Navigate to={dashboardPathFor(existing.role)} replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setSubmitting(true);
     try {
-      const data = await apiPost('/api/auth/login', { email, password });
+      const data = await apiPost('/api/auth/login', { email: email.trim(), password });
       saveSession(data.token, data.user);
       navigate(dashboardPathFor(data.user.role));
     } catch (err) {
@@ -39,6 +44,9 @@ export default function Login() {
           <p className="auth-card-subtext">Log in to manage your donor status or blood requests.</p>
 
           <form onSubmit={handleSubmit}>
+            {sessionExpired && !error && (
+              <p className="error-banner">Your session has expired. Please log in again.</p>
+            )}
             {error && <p className="error-banner">{error}</p>}
             <label className="field">
               Email

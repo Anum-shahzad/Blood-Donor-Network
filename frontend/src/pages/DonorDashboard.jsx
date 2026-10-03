@@ -1,10 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet, apiPatch, apiPost } from '../api/client.js';
+import { apiGet, apiPatch, apiPost, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import { DropletIcon, MapPinIcon, CalendarIcon, ShieldCheckIcon } from '../components/icons.jsx';
+import { formatDate, formatDateTime, todayForDateInput } from '../lib/format.js';
+
+const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
+// Same 3-month rule the server enforces (3 x 30 days).
+const COOLDOWN_DAYS = 90;
+const MATCH_REFRESH_MS = 30 * 1000;
+
+// States in which a donor is tied to a specific request.
+const COMMITMENT_STATES = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING'];
+
+function nextEligibleDate(lastDonation) {
+  if (!lastDonation) return null;
+  const d = new Date(`${lastDonation}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + COOLDOWN_DAYS);
+  return d.getTime() > Date.now() ? d : null;
+}
 
 const URGENCY_BADGE = {
   critical: 'badge-red',
@@ -14,6 +31,7 @@ const URGENCY_BADGE = {
 };
 
 function committedStateLabel(status) {
+  if (!status) return 'Profile incomplete';
   const labels = {
     MATCHED: 'Matched — awaiting your response',
     COMMITTED: 'Committed to an emergency',
@@ -36,19 +54,33 @@ export default function DonorDashboard() {
   const [actingOn, setActingOn] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [detailsForm, setDetailsForm] = useState({ blood_group: '', last_donation_date: '' });
   const user = getUser();
 
   useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
     loadAll();
-  }, [navigate]);
+  }, []);
+
+  // New requests appear while the donor has the page open — emergencies can't
+  // wait for a manual refresh.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!document.hidden) loadMatches();
+    }, MATCH_REFRESH_MS);
+    return () => clearInterval(t);
+  }, []);
 
   function loadAll() {
     apiGet('/api/donors/me')
-      .then(setProfile)
+      .then((data) => {
+        setProfile(data);
+        setDetailsForm({
+          blood_group: data.blood_group || '',
+          last_donation_date: data.last_donation_date || '',
+        });
+      })
       .catch((err) => setError(err.message));
     loadMatches();
   }
@@ -62,8 +94,26 @@ export default function DonorDashboard() {
       .catch((err) => setError(err.message));
   }
 
+  async function saveDetails(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      await apiPut('/api/donors/me', {
+        blood_group: detailsForm.blood_group,
+        last_donation_date: detailsForm.last_donation_date || undefined,
+      });
+      setEditing(false);
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function toggleAvailability() {
-    if (!profile) return;
+    if (!profile || profile.current_status !== 'AVAILABLE') return;
     setToggling(true);
     setError('');
     try {
@@ -111,8 +161,21 @@ export default function DonorDashboard() {
 
   if (!user) return null;
 
-  const isCommitted = profile?.current_status === 'COMMITTED';
-  const isAvailableForMatching = profile?.current_status === 'AVAILABLE';
+  const status = profile?.current_status;
+  const hasProfile = Boolean(profile?.blood_group);
+  const hasCommitment = Boolean(profile?.committed_request_id) && COMMITMENT_STATES.includes(status);
+  // Backing out is only allowed from COMMITTED (the server enforces this too).
+  const canCancel = status === 'COMMITTED';
+  const canToggle = status === 'AVAILABLE';
+  const isAvailableForMatching = status === 'AVAILABLE' && Boolean(profile?.is_available);
+  const eligibleAgain = nextEligibleDate(profile?.last_donation_date);
+  const statusLabel = !hasProfile
+    ? 'Profile incomplete'
+    : status === 'AVAILABLE' && !profile.is_available
+    ? 'Not available'
+    : status === 'AVAILABLE'
+    ? 'Available'
+    : committedStateLabel(status);
 
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
@@ -139,7 +202,7 @@ export default function DonorDashboard() {
               <div className="stat-card-label">Current status</div>
               <div className="stat-card-value">
                 <span className={`badge ${isAvailableForMatching ? 'badge-teal' : 'badge-amber'}`}>
-                  {isAvailableForMatching ? 'Available' : committedStateLabel(profile.current_status)}
+                  {statusLabel}
                 </span>
               </div>
             </div>
@@ -172,18 +235,62 @@ export default function DonorDashboard() {
                 <MapPinIcon size={14} /> {profile.city || 'City not set'}
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                <CalendarIcon size={14} /> Last donation: {profile.last_donation_date || 'none recorded'}
+                <CalendarIcon size={14} /> Last donation: {formatDate(profile.last_donation_date) || 'none recorded'}
               </span>
             </p>
+            {eligibleAgain && (
+              <p className="record-meta">
+                You donated recently — you can respond to new requests again from {formatDate(eligibleAgain)}.
+              </p>
+            )}
+            {hasProfile && (
+              <div className="record-actions">
+                <button type="button" className="btn-text" onClick={() => setEditing((v) => !v)}>
+                  {editing ? 'Hide details form' : 'Update donor details'}
+                </button>
+              </div>
+            )}
+            {(editing || !hasProfile) && (
+              <form onSubmit={saveDetails} style={{ marginTop: '0.75rem' }}>
+                <label className="field">
+                  Blood group
+                  <select
+                    value={detailsForm.blood_group}
+                    onChange={(e) => setDetailsForm((f) => ({ ...f, blood_group: e.target.value }))}
+                    required
+                  >
+                    <option value="" disabled>Select your blood group</option>
+                    {BLOOD_GROUPS.map((bg) => (
+                      <option key={bg} value={bg}>{bg}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Last donation date (optional)
+                  <input
+                    type="date"
+                    max={todayForDateInput()}
+                    value={detailsForm.last_donation_date}
+                    onChange={(e) => setDetailsForm((f) => ({ ...f, last_donation_date: e.target.value }))}
+                  />
+                </label>
+                <button type="submit" disabled={saving} className="btn btn-primary">
+                  {saving ? 'Saving...' : 'Save details'}
+                </button>
+                <p className="disclaimer">
+                  Changing your blood group removes its verification until an admin confirms it again.
+                </p>
+              </form>
+            )}
           </div>
 
-          {isCommitted && (
+          {hasCommitment && (
             <>
               <h2>Current commitment</h2>
               <div className="record-card state-critical">
                 <div className="record-title">
                   <span>You're committed to request #{profile.committed_request_id}</span>
-                  <span className="badge badge-amber">Committed</span>
+                  <span className="badge badge-amber">{committedStateLabel(status)}</span>
                 </div>
                 <p className="record-meta">
                   You've been removed from matching for every other emergency while this
@@ -194,9 +301,19 @@ export default function DonorDashboard() {
                   <button onClick={() => setShowChat((v) => !v)} className="btn-text">
                     {showChat ? 'Hide chat' : 'Chat with requester'}
                   </button>
-                  <button onClick={cancelCommitment} disabled={cancelling} className="btn-text">
-                    {cancelling ? 'Cancelling...' : 'Cancel commitment'}
-                  </button>
+                  {canCancel && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Cancel your commitment? The request will go back to other donors.')) {
+                          cancelCommitment();
+                        }
+                      }}
+                      disabled={cancelling}
+                      className="btn-text"
+                    >
+                      {cancelling ? 'Cancelling...' : 'Cancel commitment'}
+                    </button>
+                  )}
                 </div>
                 {showChat && (
                   <ChatPanel
@@ -212,12 +329,14 @@ export default function DonorDashboard() {
           <h2>Availability</h2>
           <button
             onClick={toggleAvailability}
-            disabled={toggling || isCommitted}
+            disabled={toggling || !canToggle || !hasProfile}
             className={`availability-toggle ${profile.is_available ? 'is-available' : 'is-unavailable'}`}
           >
             {toggling
               ? 'Updating...'
-              : isCommitted
+              : !hasProfile
+              ? 'Add your blood group above to set availability'
+              : !canToggle
               ? 'Unavailable while committed to an emergency'
               : profile.is_available
               ? 'Available — tap to mark unavailable'
@@ -244,7 +363,10 @@ export default function DonorDashboard() {
                   </span>
                   <span className={`badge ${URGENCY_BADGE[m.urgency] || 'badge-neutral'}`}>{m.urgency}</span>
                 </div>
-                <p className="record-meta">{m.hospital_name}, {m.city}</p>
+                <p className="record-meta">
+                  {m.hospital_name}, {m.city}
+                  {m.required_by ? ` · Needed by ${formatDateTime(m.required_by)}` : ''}
+                </p>
                 <div className="record-actions">
                   <button
                     onClick={() => respondTo(m.id, 'accept')}

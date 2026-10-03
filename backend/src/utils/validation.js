@@ -38,11 +38,38 @@ export function validateSignupPayload(body) {
   if (!ALLOWED_SIGNUP_ROLES.includes(body.role)) {
     errors.push(`role must be one of: ${ALLOWED_SIGNUP_ROLES.join(', ')}`);
   }
-  if (body.role === 'donor' && body.blood_group && !BLOOD_GROUPS.includes(body.blood_group)) {
-    errors.push(`blood_group must be one of: ${BLOOD_GROUPS.join(', ')}`);
+  if (body.role === 'donor' && !BLOOD_GROUPS.includes(body.blood_group)) {
+    errors.push(`blood_group is required for donors and must be one of: ${BLOOD_GROUPS.join(', ')}`);
+  }
+  if (!body.city || typeof body.city !== 'string' || body.city.trim().length < 2) {
+    errors.push('city is required');
+  }
+  if (body.phone && (typeof body.phone !== 'string' || !/^[0-9+()\-\s]{6,30}$/.test(body.phone.trim()))) {
+    errors.push('phone must be 6-30 characters (digits, spaces, + - ( ) only)');
+  }
+  if (body.role === 'donor' && body.last_donation_date) {
+    const dateError = validateDonationDate(body.last_donation_date);
+    if (dateError) errors.push(dateError);
   }
 
   return errors;
+}
+
+// last_donation_date must be a real calendar date (YYYY-MM-DD) that is not in
+// the future. Returns an error message, or null when valid.
+export function validateDonationDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return 'last_donation_date must be a date in YYYY-MM-DD format';
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    return 'last_donation_date is not a real date';
+  }
+  // One day of grace for time zones ahead of the server.
+  if (parsed.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+    return 'last_donation_date cannot be in the future';
+  }
+  return null;
 }
 
 export function validateRequestPayload(body) {
