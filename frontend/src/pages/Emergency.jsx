@@ -2,23 +2,26 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import useOpenRequests, { formatCountdown } from '../lib/useOpenRequests.js';
 import { getUser, donateLinkFor } from '../auth/session.js';
+import ThemeToggle from '../components/landing/ThemeToggle.jsx';
+import useTheme from '../lib/useTheme.js';
 import { timeAgo } from '../lib/format.js';
 import '../styles/landing.css';
 
 export default function Emergency() {
   const { open, loading, error, now } = useOpenRequests();
   const donateTo = donateLinkFor(getUser());
+  const { theme, toggle: toggleTheme } = useTheme();
   const [navOpen, setNavOpen] = useState(false);
   const closeNav = () => setNavOpen(false);
 
   return (
-    <div className="lp-page lp-emergency-page">
+    <div className="lp-page lp-emergency-page" data-theme={theme}>
       <header className={`lp-site-header${navOpen ? ' lp-nav-open' : ''}`}>
         <div className="lp-container lp-header-inner">
           <Link to="/" className="lp-logo" aria-label="Blood Donor Network home">
             <span className="lp-logo-mark" aria-hidden="true">
               <svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11 1C11 1 1 12.5 1 18C1 22.4183 5.47715 26 11 26C16.5228 26 21 22.4183 21 18C21 12.5 11 1 11 1Z" fill="var(--lp-red-primary)" />
+                <path d="M11 1C11 1 1 12.5 1 18C1 22.4183 5.47715 26 11 26C16.5228 26 21 22.4183 21 18C21 12.5 11 1 11 1Z" fill="var(--lp-logo-drop)" />
               </svg>
             </span>
             Blood Donor Network
@@ -33,6 +36,7 @@ export default function Emergency() {
             <Link to="/emergency" className="lp-nav-emergency lp-nav-current" aria-current="page" onClick={closeNav}>Emergency</Link>
           </nav>
           <div className="lp-header-actions">
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
             <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Find a donor</Link>
             <button
               className="lp-nav-toggle"
