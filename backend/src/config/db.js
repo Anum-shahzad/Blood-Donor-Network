@@ -8,6 +8,12 @@ dotenv.config();
 // NOW() / DATETIME comparisons agree no matter where the server is hosted.
 // DATE columns (e.g. last_donation_date) come back as plain 'YYYY-MM-DD'
 // strings instead of Dates that shift by a day across time zones.
+//
+// Free hosted MySQL services (TiDB Cloud, Aiven, etc.) require an encrypted
+// connection. Set DB_SSL=true in the backend environment variables to enable
+// it. Leave it unset for local development or Railway.
+const useSsl = String(process.env.DB_SSL || '').toLowerCase() === 'true';
+
 export const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT) || 3306,
@@ -19,6 +25,7 @@ export const pool = mysql.createPool({
   queueLimit: 0,
   timezone: 'Z',
   dateStrings: ['DATE'],
+  ...(useSsl ? { ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true } } : {}),
 });
 
 pool.on('connection', (connection) => {
