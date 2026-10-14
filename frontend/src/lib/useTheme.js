@@ -51,6 +51,13 @@ export default function useTheme() {
   }, []);
 
   const toggle = useCallback(() => {
+    // Cross-fade colours for a moment instead of snapping. The class only
+    // exists for ~0.45s, so it never slows normal hover/transform transitions.
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      const pages = document.querySelectorAll('.lp-page');
+      pages.forEach((el) => el.classList.add('lp-theme-switching'));
+      window.setTimeout(() => pages.forEach((el) => el.classList.remove('lp-theme-switching')), 450);
+    }
     setTheme((t) => {
       const next = t === 'dark' ? 'light' : 'dark';
       try {

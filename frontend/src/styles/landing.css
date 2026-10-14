@@ -192,6 +192,8 @@
   border-bottom: 1px solid var(--lp-header-border);
 }
 .lp-header-inner { display: flex; align-items: center; justify-content: space-between; height: 52px; }
+/* Header spans the full window: logo hard left, theme toggle + CTA hard right */
+.lp-site-header .lp-header-inner { max-width: none; margin: 0; padding: 0 24px; }
 .lp-logo { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: .98rem; letter-spacing: -0.005em; text-decoration: none; color: var(--lp-logo-text); }
 .lp-logo-mark svg { width: 16px; height: 19px; }
 .lp-main-nav { display: flex; gap: 26px; }
@@ -667,3 +669,114 @@
 .lp-page[data-theme='dark'] .lp-emg-tag-urgent { color: #FFF3F4; background: #6F111C; border-color: #6F111C; }
 .lp-page[data-theme='dark'] .lp-emg-view { border-color: #754A52; }
 .lp-page[data-theme='dark'] .lp-emg-view:hover { background: #FCE9DC; color: #2C1116; border-color: #FCE9DC; }
+
+/* ==========================================================================
+   MOTION — entrances, animated diagrams, button feedback.
+   Appended layer: nothing above is edited. All motion lives inside
+   prefers-reduced-motion: no-preference, so people who turn animations off get
+   the static page. Only transform/opacity/box-shadow are animated, and looping
+   animations pause while their section is off screen (.lp-loop-zone/.lp-in-view).
+   ========================================================================== */
+
+/* ----- State, not motion (kept for everyone) ----- */
+.lp-page[data-scrolled='true'] .lp-site-header { box-shadow: 0 8px 28px rgba(59,4,11,0.10); }
+.lp-page[data-theme='dark'][data-scrolled='true'] .lp-site-header { box-shadow: 0 8px 28px rgba(0,0,0,0.5); }
+
+/* Layout for decorative pieces (these are invisible/inert without motion) */
+.lp-final-cta { position: relative; overflow: hidden; }
+.lp-final-cta-inner { position: relative; z-index: 1; }
+.lp-ecg { position: absolute; left: 0; right: 0; top: 50%; width: 100%; height: 120px; transform: translateY(-50%); pointer-events: none; opacity: .2; }
+.lp-ecg path { fill: none; stroke: var(--lp-red-text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+
+/* ----- Keyframes ----- */
+@keyframes lp-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes lp-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lp-node-pop { from { opacity: 0; transform: scale(.7) translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes lp-arrow-draw { from { opacity: 1; clip-path: inset(-6px 100% -6px 0); } to { opacity: 1; clip-path: inset(-6px -3px -6px 0); } }
+@keyframes lp-heartbeat { 0%, 40%, 100% { transform: scale(1); } 10% { transform: scale(1.14); } 20% { transform: scale(1); } 28% { transform: scale(1.09); } }
+@keyframes lp-dot-ping { 0% { box-shadow: 0 0 0 0 rgba(var(--lp-ring-rgb), .6); } 70%, 100% { box-shadow: 0 0 0 7px rgba(var(--lp-ring-rgb), 0); } }
+@keyframes lp-ring-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--lp-ring-rgb), .45); } 70%, 100% { box-shadow: 0 0 0 14px rgba(var(--lp-ring-rgb), 0); } }
+@keyframes lp-badge-glow { 0% { box-shadow: 0 0 0 0 rgba(255,77,94,.42); } 70%, 100% { box-shadow: 0 0 0 12px rgba(255,77,94,0); } }
+@keyframes lp-kenburns { from { transform: scale(1.14); } to { transform: scale(1.04); } }
+@keyframes lp-spin { to { transform: rotate(360deg); } }
+@keyframes lp-pill-select { 0% { transform: scale(.9); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes lp-icon-swap { from { opacity: 0; transform: rotate(-90deg) scale(.5); } to { opacity: 1; transform: none; } }
+@keyframes lp-ecg-sweep { 0% { clip-path: inset(0 100% 0 0); opacity: .2; } 60% { clip-path: inset(0 0 0 0); } 85% { clip-path: inset(0 0 0 0); opacity: .2; } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
+
+/* ----- Motion (opt-in) ----- */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-page { --lp-ring-rgb: 122,11,26; }
+  .lp-page[data-theme='dark'] { --lp-ring-rgb: 223,150,153; }
+
+  /* Pause looping animations while their section is off screen */
+  .lp-loop-zone:not(.lp-in-view) *,
+  .lp-loop-zone:not(.lp-in-view) *::before,
+  .lp-loop-zone:not(.lp-in-view) *::after { animation-play-state: paused !important; }
+
+  /* Colour cross-fade while the theme toggles (class lives ~0.45s) */
+  .lp-theme-switching, .lp-theme-switching *, .lp-theme-switching *::before, .lp-theme-switching *::after {
+    transition: background-color .35s ease, color .35s ease, border-color .35s ease, fill .35s ease, stroke .35s ease, box-shadow .35s ease !important;
+  }
+
+  /* Staggered entrance for grouped content (parent reveals, children follow) */
+  .lp-stagger > :nth-child(1) { --i: 0; } .lp-stagger > :nth-child(2) { --i: 1; } .lp-stagger > :nth-child(3) { --i: 2; }
+  .lp-stagger > :nth-child(4) { --i: 3; } .lp-stagger > :nth-child(5) { --i: 4; } .lp-stagger > :nth-child(6) { --i: 5; }
+  .lp-stagger > :nth-child(7) { --i: 6; } .lp-stagger > :nth-child(8) { --i: 7; } .lp-stagger > :nth-child(9) { --i: 8; }
+  .lp-stagger.lp-is-visible > * { animation: lp-rise .7s cubic-bezier(.2,.7,.2,1) backwards; animation-delay: calc(80ms + var(--i, 0) * 90ms); }
+
+  /* Header: logo heartbeat, Emergency dot ping, nav underline */
+  .lp-logo-mark svg { transform-origin: 50% 75%; animation: lp-heartbeat 2.8s ease-in-out infinite; }
+  .lp-main-nav a.lp-nav-emergency::before { animation: lp-dot-ping 2s ease-out infinite; }
+  .lp-main-nav a:not(.lp-nav-emergency):not(.lp-nav-current) { position: relative; }
+  .lp-main-nav a:not(.lp-nav-emergency):not(.lp-nav-current)::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -5px; height: 1.5px; background: currentColor;
+    transform: scaleX(0); transform-origin: left; transition: transform .25s ease;
+  }
+  .lp-main-nav a:not(.lp-nav-emergency):not(.lp-nav-current):hover::after { transform: scaleX(1); }
+
+  /* Hero: slow zoom + scroll parallax on the photo, staggered copy */
+  .lp-hero-media-bg { inset: -48px 0; transform: translate3d(0, var(--lp-hero-shift, 0px), 0); will-change: transform; }
+  .lp-hero-media-bg img { animation: lp-kenburns 20s ease-out forwards; }
+  .lp-hero-overlay-card.lp-reveal { transform: none; }
+  .lp-hero-overlay-card.lp-stagger.lp-is-visible > * { animation-duration: .9s; animation-delay: calc(150ms + var(--i, 0) * 130ms); }
+  .lp-emg-badge { animation: lp-badge-glow 3.2s ease-out infinite; }
+
+  /* "The problem" diagram: nodes pop in, arrows draw, second row follows the first */
+  .lp-flow-row-after { --base: 700ms; }
+  .lp-flow-chain > :nth-child(1) { --i: 0; } .lp-flow-chain > :nth-child(2) { --i: 1; } .lp-flow-chain > :nth-child(3) { --i: 2; }
+  .lp-flow-chain > :nth-child(4) { --i: 3; } .lp-flow-chain > :nth-child(5) { --i: 4; } .lp-flow-chain > :nth-child(6) { --i: 5; }
+  .lp-flow-chain > :nth-child(7) { --i: 6; }
+  .lp-flowchart.lp-is-visible .lp-flow-chain > * {
+    animation: lp-node-pop .6s cubic-bezier(.3,1.4,.5,1) backwards;
+    animation-delay: calc(var(--base, 0ms) + 150ms + var(--i, 0) * 140ms);
+  }
+  .lp-flowchart.lp-is-visible .lp-flow-chain > .lp-flow-arrow { animation-name: lp-fade-in; animation-duration: .5s; animation-timing-function: ease-out; }
+  @media (min-width: 801px) { .lp-flowchart.lp-is-visible .lp-flow-chain > .lp-flow-arrow { animation-name: lp-arrow-draw; } }
+  .lp-flow-row-before .lp-flow-node-end .lp-flow-icon svg { animation: lp-spin 7s linear infinite; }
+  .lp-flow-row-after .lp-flow-node-end .lp-flow-icon { animation: lp-ring-pulse 2.6s ease-out infinite; }
+
+  /* How it works: the connecting line draws across as the steps appear */
+  .lp-timeline::before { transform: scaleX(0); transform-origin: 0 50%; transition: transform 1.3s cubic-bezier(.2,.7,.2,1) .25s; }
+  .lp-timeline.lp-is-visible::before { transform: scaleX(1); }
+
+  /* Cards: lift on hover; the matching result card breathes */
+  .lp-ui-panel, .lp-equation-item { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+  .lp-ui-panel:hover, .lp-equation-item:hover { transform: translateY(-4px); box-shadow: 0 14px 34px rgba(var(--lp-ring-rgb), .18); border-color: rgba(var(--lp-ring-rgb), .45); }
+  .lp-equation-result { animation: lp-ring-pulse 3.2s ease-out infinite; }
+
+  /* Buttons: lift, press, and a light sweep across primary buttons */
+  .lp-btn { position: relative; overflow: hidden; transition: background .15s ease, color .15s ease, border-color .15s ease, transform .2s ease, box-shadow .2s ease; }
+  .lp-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(var(--lp-ring-rgb), .3); }
+  .lp-btn:active:not(:disabled) { transform: translateY(0) scale(.98); box-shadow: none; }
+  .lp-btn-primary::after { content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-130%); background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.28) 50%, transparent 70%); }
+  .lp-btn-primary:hover::after { transform: translateX(130%); transition: transform .8s ease; }
+
+  /* Blood-type picker + theme toggle feedback */
+  .lp-compat-typepill:active { transform: scale(.94); }
+  .lp-compat-typepill[aria-pressed="true"] { animation: lp-pill-select .4s cubic-bezier(.3,1.5,.5,1); }
+  .lp-theme-icon { animation: lp-icon-swap .5s cubic-bezier(.3,1.4,.5,1); transition: transform .3s ease; }
+  .lp-theme-toggle:hover .lp-theme-icon { transform: rotate(20deg); }
+
+  /* Final call to action: a heartbeat line sweeps behind the heading */
+  .lp-ecg { animation: lp-ecg-sweep 6s linear infinite; }
+}

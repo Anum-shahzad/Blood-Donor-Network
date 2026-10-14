@@ -5,12 +5,14 @@ import EmergencyWidget from '../components/landing/EmergencyWidget.jsx';
 import BloodCompatibility from '../components/landing/BloodCompatibility.jsx';
 import ThemeToggle from '../components/landing/ThemeToggle.jsx';
 import useTheme from '../lib/useTheme.js';
+import useMotion from '../lib/useMotion.js';
 import '../styles/landing.css';
 
 export default function Home() {
   const pageRef = useRef(null);
   const [navOpen, setNavOpen] = useState(false);
   const { theme, toggle: toggleTheme } = useTheme();
+  useMotion(pageRef);
   const [donorAvailable, setDonorAvailable] = useState(true);
 
   // Call-to-action targets: guests go to signup with the right role preselected,
@@ -101,7 +103,7 @@ export default function Home() {
 
       <main id="lp-main">
         {/* HERO */}
-        <section className="lp-hero">
+        <section className="lp-hero lp-loop-zone">
           <div className="lp-hero-media-bg">
             <img
               src="/images/hero-transfusion.png"
@@ -110,7 +112,7 @@ export default function Home() {
             />
           </div>
           <div className="lp-container">
-            <div className="lp-hero-overlay-card lp-reveal">
+            <div className="lp-hero-overlay-card lp-reveal lp-stagger">
               <p className="lp-hero-eyebrow">Blood donor coordination network</p>
               <h1>When every minute matters, finding a donor shouldn&rsquo;t depend on who you know.</h1>
               <p className="lp-hero-sub">
@@ -138,7 +140,7 @@ export default function Home() {
               <h2 className="lp-center">In an emergency, searching shouldn&rsquo;t be the hardest part.</h2>
             </div>
 
-            <div className="lp-flowchart lp-reveal" style={{ '--delay': '100ms' }}>
+            <div className="lp-flowchart lp-reveal lp-loop-zone" style={{ '--delay': '100ms' }}>
               <div className="lp-flow-row lp-flow-row-before">
                 <span className="lp-flow-row-label">Today</span>
                 <div className="lp-flow-chain">
@@ -252,7 +254,7 @@ export default function Home() {
           <div className="lp-container">
             <p className="lp-eyebrow lp-center">How it works</p>
             <h2 className="lp-center">A request finds its way to the right person, step by step.</h2>
-            <ol className="lp-timeline lp-reveal">
+            <ol className="lp-timeline lp-reveal lp-stagger">
               <li className="lp-timeline-step">
                 <span className="lp-step-num">01</span>
                 <h3>Create a request</h3>
@@ -375,7 +377,7 @@ export default function Home() {
               The right match isn&rsquo;t just the right blood type. It&rsquo;s the right donor, available at the
               right time.
             </h2>
-            <div className="lp-matching-equation lp-reveal">
+            <div className="lp-matching-equation lp-reveal lp-stagger">
               <div className="lp-equation-item">
                 <span className="lp-equation-icon" aria-hidden="true">＋</span>
                 <h3>Compatibility</h3>
@@ -407,7 +409,7 @@ export default function Home() {
           <div className="lp-container">
             <p className="lp-eyebrow">Safety &amp; trust</p>
             <h2>Built to be accountable, not anonymous.</h2>
-            <div className="lp-safety-grid lp-reveal">
+            <div className="lp-safety-grid lp-reveal lp-stagger">
               <div className="lp-safety-item">
                 <h3>Identifiable accounts</h3>
                 <p>Donors and requesters use real accounts, not anonymous posts.</p>
@@ -442,7 +444,13 @@ export default function Home() {
         </section>
 
         {/* FINAL CTA */}
-        <section className="lp-section lp-final-cta">
+        <section className="lp-section lp-final-cta lp-loop-zone">
+          <svg className="lp-ecg" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true">
+            <path
+              pathLength="1000"
+              d="M0 60H330l18-6 16 6h28l14-44 24 88 20-62 14 18h40H700l18-6 16 6h28l14-44 24 88 20-62 14 18h40H1200"
+            />
+          </svg>
           <div className="lp-container lp-final-cta-inner lp-reveal">
             <h2>Be part of the network when someone needs it most.</h2>
             <div className="lp-hero-actions">
