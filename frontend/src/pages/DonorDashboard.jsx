@@ -7,7 +7,6 @@ import ChatPanel from '../components/ChatPanel.jsx';
 import {
   DropletIcon,
   MapPinIcon,
-  CalendarIcon,
   ShieldCheckIcon,
   ClockIcon,
   HeartIcon,
@@ -19,7 +18,6 @@ import {
   CarIcon,
   HospitalIcon,
   XIcon,
-  GaugeIcon,
 } from '../components/icons.jsx';
 import { formatDate, formatDateTime, todayForDateInput } from '../lib/format.js';
 import { getCompatibleDonorGroups } from '../lib/bloodCompatibility.js';
@@ -29,22 +27,6 @@ const COOLDOWN_DAYS = 90;
 const MATCH_REFRESH_MS = 25 * 1000;
 
 const COMMITMENT_STATES = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING'];
-
-const SUKKUR_HOSPITALS = [
-  'Sukkur Civil Hospital (Minara Rd)',
-  'SIUT Chhablani Medical Center Sukkur',
-  'Ghulam Muhammad Mahar Medical College (GMMMC)',
-  'Red Crescent Society Blood Bank Sukkur',
-  'Hira Medical Center Sukkur',
-];
-
-const SUKKUR_AREAS = [
-  { value: 'all', label: 'All Sukkur & Rohri' },
-  { value: 'Sukkur IBA Area', label: 'Sukkur IBA / Airport Rd' },
-  { value: 'Civil Hospital', label: 'Minara Road / Civil Hospital' },
-  { value: 'Military Road', label: 'Military Road / Cantonment' },
-  { value: 'Rohri', label: 'Rohri City' },
-];
 
 function committedStateLabel(status) {
   if (!status) return 'Profile incomplete';
@@ -70,7 +52,7 @@ const URGENCY_BADGE = {
 export default function DonorDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'tab-feed';
+  const activeTab = searchParams.get('tab') || 'tab-home';
 
   const [profile, setProfile] = useState(null);
   const [matches, setMatches] = useState([]);
@@ -92,7 +74,7 @@ export default function DonorDashboard() {
   const [submittingDonation, setSubmittingDonation] = useState(false);
   const [logForm, setLogForm] = useState({
     donation_date: todayForDateInput(),
-    hospital_name: SUKKUR_HOSPITALS[0],
+    hospital_name: '',
     recipient_case: '',
     units: 1,
   });
@@ -296,6 +278,13 @@ export default function DonorDashboard() {
     navigate('/login');
   }
 
+  // Area filter options come from the cities of the requests actually shown,
+  // so the app works for any city instead of a hardcoded list.
+  const areaOptions = useMemo(() => {
+    const cities = [...new Set(matches.map((m) => (m.city || '').trim()).filter(Boolean))].sort();
+    return [{ value: 'all', label: 'All areas' }, ...cities.map((c) => ({ value: c, label: c }))];
+  }, [matches]);
+
   const filteredMatches = useMemo(() => {
     if (areaFilter === 'all') return matches;
     return matches.filter((m) =>
@@ -306,6 +295,7 @@ export default function DonorDashboard() {
 
   if (!user) return null;
 
+  const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const status = profile?.current_status || 'AVAILABLE';
   const hasProfile = Boolean(profile?.blood_group);
   const hasCommitment = Boolean(profile?.committed_request_id) && COMMITMENT_STATES.includes(status);
@@ -332,9 +322,9 @@ export default function DonorDashboard() {
     <DashboardLayout user={user} onLogout={handleLogout}>
       {/* Dashboard Top Header */}
       <div className="dashboard-header">
-        <h1>Sukkur Blood Network &mdash; Donor Portal</h1>
+        <h1>Hi, {firstName} 👋</h1>
         <p className="dashboard-subtext">
-          Connecting verified donors &amp; emergency requests across Sukkur, Rohri &amp; surrounding medical centers.
+          Here&apos;s a quick look at your donor activity today.
         </p>
       </div>
 
@@ -380,65 +370,117 @@ export default function DonorDashboard() {
         <div className="quick-status-group">
           <div className="quick-pill" style={{ borderLeft: '3px solid var(--primary)' }}>
             <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{profile?.blood_group || '—'}</span>
-            <span>{user.name}</span>
-            <span style={{ color: 'var(--ink-muted)', fontSize: '0.75rem' }}>({profile?.city || 'Sukkur'})</span>
+            {profile?.city && (
+              <span style={{ color: 'var(--ink-muted)', fontSize: '0.75rem' }}>{profile.city}</span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <nav className="tab-nav" aria-label="Donor Dashboard Tabs">
-        <button
-          onClick={() => setTab('tab-feed')}
-          className={`tab-btn ${activeTab === 'tab-feed' ? 'is-active' : ''}`}
-        >
-          <AlertCircleIcon size={16} />
-          <span>Emergency Matches</span>
-          <span className="tab-badge">{filteredMatches.length}</span>
-        </button>
+      {/* ================================================================= */}
+      {/* HOME: QUICK OVERVIEW                                             */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-home' && (
+        <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          <div className="stat-grid" style={{ marginBottom: 0 }}>
+            <div className="stat-card">
+              <div className="stat-card-label"><span>Eligibility</span><ClockIcon size={16} /></div>
+              <div className="stat-card-value" style={{ color: isEligible ? 'var(--success)' : 'var(--amber)' }}>
+                {isEligible ? 'Eligible' : `${daysRemaining}d left`}
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label"><span>Open Matches</span><AlertCircleIcon size={16} /></div>
+              <div className="stat-card-value">{matches.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label"><span>Total Donations</span><DropletIcon size={16} /></div>
+              <div className="stat-card-value">{totalDonations}</div>
+            </div>
+            <div className="stat-card stat-card--accent">
+              <div className="stat-card-label"><span>Lives Impacted</span><HeartIcon size={16} /></div>
+              <div className="stat-card-value">{livesSaved}</div>
+            </div>
+          </div>
 
-        <button
-          onClick={() => setTab('tab-cooldown')}
-          className={`tab-btn ${activeTab === 'tab-cooldown' ? 'is-active' : ''}`}
-        >
-          <CalendarIcon size={16} />
-          <span>3-Month Cooldown &amp; History</span>
-        </button>
+          {/* Active commitment summary */}
+          {hasCommitment && (
+            <div className="form-card" style={{ borderLeft: '4px solid var(--primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem' }}>You have an active commitment</h3>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+                    {profile?.committed_request?.hospital_name || 'Hospital'}
+                    {profile?.committed_request?.city ? `, ${profile.committed_request.city}` : ''} &middot; {committedStateLabel(status)}
+                  </p>
+                </div>
+                <button onClick={() => setTab('tab-commitments')} className="btn btn-primary">
+                  View Commitment
+                </button>
+              </div>
+            </div>
+          )}
 
-        <button
-          onClick={() => setTab('tab-commitments')}
-          className={`tab-btn ${activeTab === 'tab-commitments' ? 'is-active' : ''}`}
-        >
-          <HeartIcon size={16} />
-          <span>My Commitments</span>
-          {hasCommitment && <span className="tab-badge" style={{ background: 'var(--amber)', color: '#fff' }}>1 Active</span>}
-        </button>
+          {/* Latest compatible emergencies */}
+          <div className="form-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.85rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Latest emergencies for you</h3>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  Compatible with your {donorGroup} blood group
+                </p>
+              </div>
+              {matches.length > 0 && (
+                <button onClick={() => setTab('tab-feed')} className="btn btn-secondary" style={{ fontSize: '0.82rem', padding: '0.45rem 0.75rem' }}>
+                  View all ({matches.length})
+                </button>
+              )}
+            </div>
 
-        <button
-          onClick={() => setTab('tab-card')}
-          className={`tab-btn ${activeTab === 'tab-card' ? 'is-active' : ''}`}
-        >
-          <IdCardIcon size={16} />
-          <span>Donor Identity Card</span>
-        </button>
+            {matches.length === 0 ? (
+              <p className="empty-state" style={{ margin: 0 }}>
+                {matchesReason || 'No compatible verified emergencies right now. New ones will appear here automatically.'}
+              </p>
+            ) : (
+              <div className="stack" style={{ gap: '0.6rem' }}>
+                {matches.slice(0, 3).map((m) => (
+                  <div
+                    key={m.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.7rem 0.9rem' }}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {m.blood_group}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong style={{ display: 'block', fontSize: '0.92rem' }}>{m.patient_case || 'Urgent Blood Transfusion'}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                        {m.hospital_name}{m.city ? `, ${m.city}` : ''} &middot; {m.units_needed} unit{m.units_needed > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <span className={`badge ${URGENCY_BADGE[m.urgency] || 'badge-neutral'}`}>{m.urgency}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        <button
-          onClick={() => setTab('tab-settings')}
-          className={`tab-btn ${activeTab === 'tab-settings' ? 'is-active' : ''}`}
-        >
-          <SlidersIcon size={16} />
-          <span>Donor Settings</span>
-        </button>
-
-        <button
-          onClick={() => setTab('tab-overview-all')}
-          className={`tab-btn ${activeTab === 'tab-overview-all' ? 'is-active' : ''}`}
-          style={{ marginLeft: 'auto' }}
-        >
-          <GaugeIcon size={16} />
-          <span>System Architecture</span>
-        </button>
-      </nav>
+          {/* Cooldown summary */}
+          <div className="form-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
+                {isEligible ? 'You can donate today' : `Back to donating on ${formatDate(cooldownInfo?.cooldownUntil)}`}
+              </h3>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+                Last donation: {profile?.last_donation_date ? formatDate(profile.last_donation_date) : 'none recorded'}
+                {daysElapsed !== null ? ` (${daysElapsed} days ago)` : ''}
+              </p>
+            </div>
+            <button onClick={() => setLogModalOpen(true)} className="btn btn-secondary">
+              + Record a Donation
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ================================================================= */}
       {/* TAB 1: EMERGENCY MATCHES FEED                                    */}
@@ -466,7 +508,7 @@ export default function DonorDashboard() {
                 </h3>
               </div>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-                As a registered <strong style={{ color: 'var(--primary)' }}>{donorGroup} donor</strong>, you can safely donate to patients requiring <strong style={{ color: 'var(--primary-dark)' }}>{recipientsList}</strong> blood in Sukkur &amp; Rohri.
+                As a registered <strong style={{ color: 'var(--primary)' }}>{donorGroup} donor</strong>, you can safely donate to patients requiring <strong style={{ color: 'var(--primary-dark)' }}>{recipientsList}</strong> blood.
               </p>
             </div>
 
@@ -484,7 +526,7 @@ export default function DonorDashboard() {
                   fontFamily: 'inherit',
                 }}
               >
-                {SUKKUR_AREAS.map((a) => (
+                {areaOptions.map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
               </select>
@@ -499,7 +541,7 @@ export default function DonorDashboard() {
                 {matchesReason || 'No compatible verified emergencies currently matching your blood group.'}
               </p>
               <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', margin: '0 auto' }}>
-                When hospitals in Sukkur post new verified emergencies for {donorGroup}, they will automatically appear here.
+                When hospitals post new verified emergencies for {donorGroup}, they will automatically appear here.
               </p>
             </div>
           ) : (
@@ -559,7 +601,7 @@ export default function DonorDashboard() {
                       </div>
                       <div>
                         <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>LOCATION</span>
-                        <strong>{m.city || 'Sukkur'}</strong>
+                        <strong>{m.city || '—'}</strong>
                       </div>
                       <div>
                         <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>POSTED BY</span>
@@ -805,10 +847,10 @@ export default function DonorDashboard() {
                     Destination Hospital
                   </span>
                   <strong style={{ fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <HospitalIcon size={16} /> {profile?.committed_request?.hospital_name || 'Hospital in Sukkur'}
+                    <HospitalIcon size={16} /> {profile?.committed_request?.hospital_name || 'Hospital'}
                   </strong>
                   <span style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
-                    {profile?.committed_request?.city || 'Sukkur'}
+                    {profile?.committed_request?.city || ''}
                   </span>
                 </div>
 
@@ -906,7 +948,7 @@ export default function DonorDashboard() {
                 {canCancel && (
                   <button
                     onClick={() => {
-                      if (window.confirm('Cancel your commitment? The emergency request will immediately be reopened for other donors in Sukkur.')) {
+                      if (window.confirm('Cancel your commitment? The emergency request will immediately be reopened for other donors.')) {
                         cancelCommitment();
                       }
                     }}
@@ -950,7 +992,7 @@ export default function DonorDashboard() {
                 <ShieldCheckIcon size={24} />
                 <div>
                   <h4 style={{ margin: 0, fontSize: '0.88rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Sukkur Emergency Blood Network
+                    Blood Donor Network
                   </h4>
                   <span style={{ fontSize: '0.7rem', color: 'var(--accent-light)' }}>
                     Official Donor Identity Pass
@@ -971,10 +1013,12 @@ export default function DonorDashboard() {
               </div>
               <div className="donor-id-meta">
                 <h3>{user.name}</h3>
-                <div className="donor-id-code">ID: BD-SUK-2026-{String(user.id).padStart(4, '0')}</div>
-                <p className="donor-id-sub">
-                  <MapPinIcon size={14} /> {profile?.city || 'Sukkur IBA Area, Sukkur'}
-                </p>
+                <div className="donor-id-code">ID: BD-{new Date().getFullYear()}-{String(user.id).padStart(4, '0')}</div>
+                {profile?.city && (
+                  <p className="donor-id-sub">
+                    <MapPinIcon size={14} /> {profile.city}
+                  </p>
+                )}
                 {user.phone && (
                   <p className="donor-id-sub" style={{ marginTop: '0.2rem' }}>
                     <PhoneIcon size={14} /> {user.phone}
@@ -1101,7 +1145,7 @@ export default function DonorDashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <strong style={{ fontSize: '0.9rem' }}>Maximum Alert Radius</strong>
                   <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
-                    {settingsForm.alert_radius} km (Sukkur &amp; Rohri)
+                    {settingsForm.alert_radius} km
                   </span>
                 </div>
                 <input
@@ -1115,8 +1159,8 @@ export default function DonorDashboard() {
                 />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--ink-muted)', marginTop: '0.2rem' }}>
                   <span>2 km (Local neighborhood)</span>
-                  <span>10 km (City wide)</span>
-                  <span>25 km (Includes Pano Aqil)</span>
+                  <span>10 km (Citywide)</span>
+                  <span>25 km (Wider region)</span>
                 </div>
               </div>
 
@@ -1219,68 +1263,6 @@ export default function DonorDashboard() {
       )}
 
       {/* ================================================================= */}
-      {/* TAB 6: COMPLETE ARCHITECTURE COMPARISON                          */}
-      {/* ================================================================= */}
-      {activeTab === 'tab-overview-all' && (
-        <div className="tab-content">
-          <div className="form-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Complete 3-Role System Architecture Map</h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-                  Interactive specifications for Donor, Requester, and Admin portals across Sukkur
-                </p>
-              </div>
-              <span className="badge badge-teal">CSC-206 Reference</span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-              {/* Donor Portal Col */}
-              <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '1rem' }}>
-                <h4 style={{ color: 'var(--primary)', margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
-                  1. Donor Dashboard (5 Tabs)
-                </h4>
-                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.82rem', color: 'var(--ink-muted)', lineHeight: 1.6 }}>
-                  <li><strong>Emergency Matches Feed</strong> (compatible requests nearby)</li>
-                  <li><strong>3-Month Cooldown &amp; History</strong> (self-declaration &amp; countdown)</li>
-                  <li><strong>Active Commitments</strong> (accepted requests &amp; live status)</li>
-                  <li><strong>Donor Identity Card</strong> (digital pass &amp; compatibility matrix)</li>
-                  <li><strong>Donor Settings</strong> (radius, status toggle, privacy)</li>
-                </ul>
-              </div>
-
-              {/* Requester Portal Col */}
-              <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '1rem' }}>
-                <h4 style={{ color: 'var(--amber)', margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
-                  2. Requester Dashboard (4 Tabs)
-                </h4>
-                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.82rem', color: 'var(--ink-muted)', lineHeight: 1.6 }}>
-                  <li><strong>Post Emergency Request</strong> (form: blood type, hospital, units)</li>
-                  <li><strong>My Active Requests</strong> (pending, fulfilled, expired tracking)</li>
-                  <li><strong>Matched Donors Radar</strong> (ranked compatible donors nearby)</li>
-                  <li><strong>Past Requests Archive</strong> (history &amp; certificates)</li>
-                </ul>
-              </div>
-
-              {/* Admin Portal Col */}
-              <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '1rem' }}>
-                <h4 style={{ color: 'var(--primary-dark)', margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
-                  3. Admin Dashboard (5 Tabs)
-                </h4>
-                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.82rem', color: 'var(--ink-muted)', lineHeight: 1.6 }}>
-                  <li><strong>Sukkur Network Analytics</strong> (shortages by area &amp; trends)</li>
-                  <li><strong>Request Verification Queue</strong> (approve/reject requests)</li>
-                  <li><strong>Donor Registry &amp; Compliance</strong> (manage cooldowns &amp; bans)</li>
-                  <li><strong>Abuse &amp; Fraud Reports</strong> (rate-limit suspicious activity)</li>
-                  <li><strong>System Policies &amp; Settings</strong> (90-day rule, SMS gateway)</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================= */}
       {/* INTERACTIVE MODAL: RECORD BLOOD DONATION                          */}
       {/* ================================================================= */}
       {logModalOpen && (
@@ -1317,16 +1299,14 @@ export default function DonorDashboard() {
               </label>
 
               <label className="field">
-                Hospital / Donation Center in Sukkur
-                <select
+                Hospital / Donation Center
+                <input
+                  type="text"
+                  placeholder="e.g. City General Hospital"
                   value={logForm.hospital_name}
                   onChange={(e) => setLogForm((f) => ({ ...f, hospital_name: e.target.value }))}
                   required
-                >
-                  {SUKKUR_HOSPITALS.map((h) => (
-                    <option key={h} value={h}>{h}</option>
-                  ))}
-                </select>
+                />
               </label>
 
               <label className="field">

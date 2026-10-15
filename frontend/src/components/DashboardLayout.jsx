@@ -22,12 +22,12 @@ import {
 function navItemsFor(role) {
   if (role === 'donor') {
     return [
-      { to: '/donor/dashboard?tab=tab-feed', label: 'Emergency Matches', icon: DropletIcon, isDefault: true },
+      { to: '/donor/dashboard?tab=tab-home', label: 'Home', icon: HomeIcon, isDefault: true },
+      { to: '/donor/dashboard?tab=tab-feed', label: 'Emergency Matches', icon: DropletIcon },
       { to: '/donor/dashboard?tab=tab-cooldown', label: 'Cooldown & History', icon: ClockIcon },
       { to: '/donor/dashboard?tab=tab-commitments', label: 'My Commitments', icon: HeartIcon },
       { to: '/donor/dashboard?tab=tab-card', label: 'Identity Card', icon: IdCardIcon },
-      { to: '/donor/dashboard?tab=tab-settings', label: 'Donor Settings', icon: SlidersIcon },
-      { to: '/', label: 'Home', icon: HomeIcon },
+      { to: '/donor/dashboard?tab=tab-settings', label: 'Settings', icon: SlidersIcon },
     ];
   }
 
@@ -58,6 +58,7 @@ function navItemsFor(role) {
 export default function DashboardLayout({ user, onLogout, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navItems = navItemsFor(user?.role);
+  const brandTo = user?.role === 'donor' ? '/donor/dashboard?tab=tab-home' : '/';
 
   return (
     <div className="app-shell">
@@ -84,6 +85,7 @@ export default function DashboardLayout({ user, onLogout, children }) {
         onLogout={onLogout}
         open={drawerOpen}
         onNavigate={() => setDrawerOpen(false)}
+        brandTo={brandTo}
       />
 
       <main className="dashboard-main">{children}</main>

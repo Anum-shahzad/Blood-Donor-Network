@@ -4,14 +4,14 @@ import { LogoutIcon } from './icons.jsx';
 
 const ROLE_LABELS = { donor: 'Donor', requester: 'Requester', admin: 'Admin' };
 
-export default function Sidebar({ user, navItems, onLogout, open, onNavigate }) {
+export default function Sidebar({ user, navItems, onLogout, open, onNavigate, brandTo = '/' }) {
   const initials = user?.name ? user.name.trim().charAt(0).toUpperCase() : '?';
   const location = useLocation();
   const currentPathWithSearch = location.pathname + location.search;
 
   return (
     <aside className={`sidebar${open ? ' is-open' : ''}`}>
-      <Link to="/" className="sidebar-brand" onClick={onNavigate}>
+      <Link to={brandTo} className="sidebar-brand" onClick={onNavigate}>
         <BrandMark onDark size={32} />
         <span className="sidebar-brand-text">Blood Donor Network</span>
       </Link>
