@@ -98,3 +98,58 @@ export function requestStatusAfterAccept() {
 export function requestStatusAfterCommitmentCancelled() {
   return 'matched';
 }
+
+export const JOURNEY_STEPS = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING', 'DONATION_COMPLETED'];
+
+// Validates whether a committed donor can advance their journey step
+export function canDonorAdvanceJourney(donorProfile, nextStep) {
+  if (!donorProfile) {
+    return { ok: false, reason: 'Donor profile not found' };
+  }
+  if (!donorProfile.committed_request_id) {
+    return { ok: false, reason: 'You have no active commitment' };
+  }
+  const current = donorProfile.current_status;
+  const validTransitions = {
+    COMMITTED: ['EN_ROUTE', 'ARRIVED'],
+    EN_ROUTE: ['ARRIVED', 'DONATING', 'DONATION_COMPLETED'],
+    ARRIVED: ['DONATING', 'DONATION_COMPLETED'],
+    DONATING: ['DONATION_COMPLETED'],
+  };
+  const allowed = validTransitions[current] || [];
+  if (!allowed.includes(nextStep)) {
+    return { ok: false, reason: `Cannot transition from ${current} to ${nextStep}` };
+  }
+  return { ok: true };
+}
+
+// Computes cooldown progress, remaining days, and eligibility
+export function computeCooldownInfo(lastDonationDate, cooldownDays = 90) {
+  if (!lastDonationDate) {
+    return {
+      isEligible: true,
+      daysRemaining: 0,
+      daysElapsed: null,
+      cooldownUntil: null,
+    };
+  }
+  const dateStr = String(lastDonationDate).split('T')[0];
+  const donationTime = new Date(`${dateStr}T00:00:00Z`).getTime();
+  if (Number.isNaN(donationTime)) {
+    return { isEligible: true, daysRemaining: 0, daysElapsed: null, cooldownUntil: null };
+  }
+  const now = Date.now();
+  const msElapsed = now - donationTime;
+  const daysElapsed = Math.max(0, Math.floor(msElapsed / (1000 * 60 * 60 * 24)));
+  const daysRemaining = Math.max(0, cooldownDays - daysElapsed);
+  const isEligible = daysRemaining === 0;
+  const cooldownDate = new Date(donationTime + cooldownDays * 24 * 60 * 60 * 1000);
+  const cooldownUntil = cooldownDate.toISOString().split('T')[0];
+
+  return {
+    isEligible,
+    daysRemaining,
+    daysElapsed,
+    cooldownUntil,
+  };
+}

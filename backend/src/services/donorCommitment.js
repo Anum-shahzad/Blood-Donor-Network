@@ -15,6 +15,8 @@ import {
   canDonorAccept,
   canRequestAcceptDonor,
   canDonorCancelCommitment,
+  canDonorAdvanceJourney,
+  computeCooldownInfo,
   requestStatusAfterAccept,
   requestStatusAfterCommitmentCancelled,
 } from './matching/donorState.js';
@@ -207,6 +209,119 @@ export async function cancelCommitment(donorId) {
 
     await conn.commit();
     return { donor_status: 'AVAILABLE', reopened_request_id: requestId || null };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Donor advances journey step (COMMITTED -> EN_ROUTE -> ARRIVED -> DONATING)
+export async function advanceCommitmentStep(donorId, nextStep) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [donorRows] = await conn.query(
+      'SELECT * FROM donor_profiles WHERE user_id = ? FOR UPDATE',
+      [donorId]
+    );
+    const donorProfile = donorRows[0];
+    const check = canDonorAdvanceJourney(donorProfile, nextStep);
+    if (!check.ok) {
+      throw httpError(409, check.reason);
+    }
+
+    await conn.query(
+      `UPDATE donor_profiles
+         SET current_status = ?,
+             status_changed_at = NOW()
+       WHERE user_id = ?`,
+      [nextStep, donorId]
+    );
+
+    await conn.commit();
+    return { donor_status: nextStep, request_id: donorProfile.committed_request_id };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Records a completed or past donation, triggers 90-day cooldown countdown, and marks active request fulfilled
+export async function recordDonation(donorId, { donation_date, hospital_name, recipient_case, units = 1, request_id = null }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [donorRows] = await conn.query(
+      'SELECT * FROM donor_profiles WHERE user_id = ? FOR UPDATE',
+      [donorId]
+    );
+    const donorProfile = donorRows[0];
+    if (!donorProfile || !donorProfile.blood_group) {
+      throw httpError(400, 'Set your blood group first before logging a donation');
+    }
+
+    const cooldownDays = 90;
+    const cooldownInfo = computeCooldownInfo(donation_date, cooldownDays);
+
+    const activeRequestId = request_id || donorProfile.committed_request_id;
+
+    const [donationInsert] = await conn.query(
+      `INSERT INTO donations (donor_id, request_id, donation_date, hospital_name, units, blood_group, recipient_case, is_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`,
+      [
+        donorId,
+        activeRequestId,
+        donation_date,
+        hospital_name.trim(),
+        units || 1,
+        donorProfile.blood_group,
+        recipient_case ? recipient_case.trim() : null,
+      ]
+    );
+
+    if (activeRequestId) {
+      await conn.query(
+        `UPDATE requests SET status = 'fulfilled' WHERE id = ? AND status IN ('donor_accepted', 'matched', 'verified')`,
+        [activeRequestId]
+      );
+    }
+
+    const nextStatus = cooldownInfo.isEligible ? 'AVAILABLE' : 'COOLDOWN';
+    const nextIsAvailable = cooldownInfo.isEligible ? Boolean(donorProfile.is_available) : false;
+
+    await conn.query(
+      `UPDATE donor_profiles
+         SET last_donation_date = ?,
+             cooldown_until = ?,
+             current_status = ?,
+             is_available = ?,
+             committed_request_id = NULL,
+             commitment_ended_at = NOW(),
+             status_changed_at = NOW()
+       WHERE user_id = ?`,
+      [
+        donation_date,
+        cooldownInfo.cooldownUntil,
+        nextStatus,
+        nextIsAvailable,
+        donorId,
+      ]
+    );
+
+    await conn.commit();
+    return {
+      donation_id: donationInsert.insertId,
+      donor_status: nextStatus,
+      is_available: nextIsAvailable,
+      cooldown_until: cooldownInfo.cooldownUntil,
+      days_remaining: cooldownInfo.daysRemaining,
+      is_eligible: cooldownInfo.isEligible,
+    };
   } catch (err) {
     await conn.rollback();
     throw err;
