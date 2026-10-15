@@ -16,9 +16,13 @@ dotenv.config();
 
 if (!process.env.JWT_SECRET) {
   // Fail at boot, loudly, instead of 500-ing on the first login.
-  console.error('JWT_SECRET is not set — refusing to start.');
+  console.error('JWT_SECRET is not set, refusing to start.');
   process.exit(1);
 }
+
+// On Vercel the app runs as a serverless function: there is no long-lived
+// process, so we must not call app.listen() or rely on setInterval().
+const isServerless = Boolean(process.env.VERCEL);
 
 const app = express();
 
@@ -29,10 +33,33 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '')
   .map((o) => o.trim())
   .filter(Boolean);
 if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
-  console.warn('CORS_ORIGIN is not set — the API accepts requests from any origin.');
+  console.warn('CORS_ORIGIN is not set, the API accepts requests from any origin.');
 }
 app.use(cors(allowedOrigins.length > 0 ? { origin: allowedOrigins } : undefined));
 app.use(express.json());
+
+// Mark overdue requests as expired. The statement is idempotent, so running
+// it on several instances is harmless.
+async function sweepExpiredRequests() {
+  try {
+    const n = await expireOverdueRequests();
+    if (n > 0) console.log(`Expired ${n} overdue request(s)`);
+  } catch (err) {
+    console.error('Expiry sweep failed:', err.message);
+  }
+}
+
+if (isServerless) {
+  // No background timer in serverless, so run the sweep on incoming traffic,
+  // at most once a minute per function instance.
+  let lastSweep = 0;
+  app.use((req, res, next) => {
+    const now = Date.now();
+    if (now - lastSweep < 60 * 1000) return next();
+    lastSweep = now;
+    sweepExpiredRequests().finally(next);
+  });
+}
 
 app.use('/api/health', healthRouter);
 app.use('/api/public', publicRouter);
@@ -50,22 +77,14 @@ app.use((req, res) => {
 // Must be registered last
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+if (!isServerless) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
 
-// Mark overdue requests as expired once a minute. The statement is
-// idempotent, so running it on several instances is harmless.
-async function sweepExpiredRequests() {
-  try {
-    const n = await expireOverdueRequests();
-    if (n > 0) console.log(`Expired ${n} overdue request(s)`);
-  } catch (err) {
-    console.error('Expiry sweep failed:', err.message);
-  }
+  sweepExpiredRequests();
+  setInterval(sweepExpiredRequests, 60 * 1000).unref();
 }
-sweepExpiredRequests();
-setInterval(sweepExpiredRequests, 60 * 1000).unref();
 
 export default app;
