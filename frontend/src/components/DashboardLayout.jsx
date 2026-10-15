@@ -33,22 +33,22 @@ function navItemsFor(role) {
 
   if (role === 'requester') {
     return [
-      { to: '/requester/dashboard?tab=tab-active', label: 'Active Requests', icon: ClockIcon, isDefault: true },
+      { to: '/requester/dashboard?tab=tab-home', label: 'Home', icon: HomeIcon, isDefault: true },
+      { to: '/requester/dashboard?tab=tab-active', label: 'Active Requests', icon: ClockIcon },
       { to: '/requester/dashboard?tab=tab-post', label: 'Post Emergency', icon: FileTextIcon },
       { to: '/requester/dashboard?tab=tab-radar', label: 'Matched Radar', icon: RadarIcon },
       { to: '/requester/dashboard?tab=tab-archive', label: 'Requests Archive', icon: ArchiveIcon },
-      { to: '/', label: 'Home', icon: HomeIcon },
     ];
   }
 
   if (role === 'admin') {
     return [
-      { to: '/admin/dashboard?tab=tab-analytics', label: 'Network Analytics', icon: GaugeIcon, isDefault: true },
+      { to: '/admin/dashboard?tab=tab-home', label: 'Home', icon: HomeIcon, isDefault: true },
+      { to: '/admin/dashboard?tab=tab-analytics', label: 'Network Analytics', icon: GaugeIcon },
       { to: '/admin/dashboard?tab=tab-verifications', label: 'Verification Queue', icon: ShieldCheckIcon },
       { to: '/admin/dashboard?tab=tab-donors', label: 'Donor Registry', icon: UsersIcon },
       { to: '/admin/dashboard?tab=tab-fraud', label: 'Abuse & Fraud', icon: AlertCircleIcon },
-      { to: '/admin/dashboard?tab=tab-settings', label: 'Policies & Settings', icon: SlidersIcon },
-      { to: '/', label: 'Home', icon: HomeIcon },
+      { to: '/admin/dashboard?tab=tab-settings', label: 'Settings', icon: SlidersIcon },
     ];
   }
 
@@ -58,7 +58,12 @@ function navItemsFor(role) {
 export default function DashboardLayout({ user, onLogout, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navItems = navItemsFor(user?.role);
-  const brandTo = user?.role === 'donor' ? '/donor/dashboard?tab=tab-home' : '/';
+  const HOME_BY_ROLE = {
+    donor: '/donor/dashboard?tab=tab-home',
+    requester: '/requester/dashboard?tab=tab-home',
+    admin: '/admin/dashboard?tab=tab-home',
+  };
+  const brandTo = HOME_BY_ROLE[user?.role] || '/';
 
   return (
     <div className="app-shell">

@@ -27,19 +27,11 @@ const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const URGENCY_LEVELS = ['low', 'medium', 'high', 'critical'];
 const CLOSED_STATUSES = ['fulfilled', 'cancelled', 'expired'];
 
-const SUKKUR_HOSPITALS = [
-  'Sukkur Civil Hospital (Minara Rd)',
-  'SIUT Chhablani Medical Center Sukkur',
-  'Ghulam Muhammad Mahar Medical College (GMMMC)',
-  'Red Crescent Society Blood Bank Sukkur',
-  'Hira Medical Center Sukkur',
-];
-
 const emptyForm = {
   blood_group: '',
   units_needed: 1,
-  hospital_name: SUKKUR_HOSPITALS[0],
-  city: 'Sukkur IBA Area',
+  hospital_name: '',
+  city: '',
   urgency: 'high',
   required_by: '',
   patient_case: '',
@@ -65,7 +57,7 @@ export default function RequesterDashboard() {
   const navigate = useNavigate();
   const user = getUser();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'tab-active';
+  const activeTab = searchParams.get('tab') || 'tab-home';
 
   const [requests, setRequests] = useState([]);
   const [archiveData, setArchiveData] = useState({ archive: [], stats: {} });
@@ -198,6 +190,7 @@ export default function RequesterDashboard() {
 
   if (!user) return null;
 
+  const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const activeRequests = requests.filter((r) => !CLOSED_STATUSES.includes(r.status));
   const fulfilledCount = archiveData?.stats?.total_fulfilled ?? requests.filter((r) => r.status === 'fulfilled').length;
   const criticalCount = activeRequests.filter((r) => r.urgency === 'critical').length;
@@ -207,9 +200,9 @@ export default function RequesterDashboard() {
     <DashboardLayout user={user} onLogout={handleLogout}>
       {/* Top Header */}
       <div className="dashboard-header">
-        <h1>Sukkur Blood Network &mdash; Requester Portal</h1>
+        <h1>Hi, {firstName}</h1>
         <p className="dashboard-subtext">
-          Post urgent blood requests, track real-time fulfillment, and coordinate with verified donors across Sukkur &amp; Rohri.
+          Here&apos;s a quick look at your blood requests today.
         </p>
       </div>
 
@@ -220,62 +213,80 @@ export default function RequesterDashboard() {
         </div>
       )}
 
-      {/* Overview Stat Cards */}
-      <div className="stat-grid">
-        <div className="stat-card">
-          <div className="stat-card-label">Active Requests</div>
-          <div className="stat-card-value">{activeRequests.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Fulfilled Emergencies</div>
-          <div className="stat-card-value">{fulfilledCount}</div>
-        </div>
-        <div className="stat-card stat-card--accent">
-          <div className="stat-card-label">Critical Pending</div>
-          <div className="stat-card-value">{criticalCount}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Units Sourced</div>
-          <div className="stat-card-value">{totalUnitsSourced} Bags</div>
-        </div>
-      </div>
+      {/* ================================================================= */}
+      {/* HOME: QUICK OVERVIEW                                             */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-home' && (
+        <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          <div className="stat-grid" style={{ marginBottom: 0 }}>
+            <div className="stat-card">
+              <div className="stat-card-label">Active Requests</div>
+              <div className="stat-card-value">{activeRequests.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Fulfilled Emergencies</div>
+              <div className="stat-card-value">{fulfilledCount}</div>
+            </div>
+            <div className="stat-card stat-card--accent">
+              <div className="stat-card-label">Critical Pending</div>
+              <div className="stat-card-value">{criticalCount}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Units Sourced</div>
+              <div className="stat-card-value">{totalUnitsSourced} Bags</div>
+            </div>
+          </div>
 
-      {/* Navigation Tabs */}
-      <nav className="tab-nav" aria-label="Requester Dashboard Tabs">
-        <button
-          onClick={() => setTab('tab-active')}
-          className={`tab-btn ${activeTab === 'tab-active' ? 'is-active' : ''}`}
-        >
-          <ClockIcon size={16} />
-          <span>My Active Requests</span>
-          <span className="tab-badge">{activeRequests.length}</span>
-        </button>
+          <div className="form-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.85rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Your active requests</h3>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  Most recent requests still waiting to be fulfilled
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {activeRequests.length > 0 && (
+                  <button onClick={() => setTab('tab-active')} className="btn btn-secondary" style={{ fontSize: '0.82rem', padding: '0.45rem 0.75rem' }}>
+                    View all ({activeRequests.length})
+                  </button>
+                )}
+                <button onClick={() => setTab('tab-post')} className="btn btn-primary" style={{ fontSize: '0.82rem', padding: '0.45rem 0.75rem' }}>
+                  + Post Emergency
+                </button>
+              </div>
+            </div>
 
-        <button
-          onClick={() => setTab('tab-post')}
-          className={`tab-btn ${activeTab === 'tab-post' ? 'is-active' : ''}`}
-        >
-          <FileTextIcon size={16} />
-          <span>Post Emergency Request</span>
-        </button>
-
-        <button
-          onClick={() => setTab('tab-radar')}
-          className={`tab-btn ${activeTab === 'tab-radar' ? 'is-active' : ''}`}
-        >
-          <RadarIcon size={16} />
-          <span>Matched Donors Radar</span>
-          {radarMatches?.match_count ? <span className="tab-badge">{radarMatches.match_count}</span> : null}
-        </button>
-
-        <button
-          onClick={() => setTab('tab-archive')}
-          className={`tab-btn ${activeTab === 'tab-archive' ? 'is-active' : ''}`}
-        >
-          <ArchiveIcon size={16} />
-          <span>Past Requests Archive</span>
-        </button>
-      </nav>
+            {activeRequests.length === 0 ? (
+              <p className="empty-state" style={{ margin: 0 }}>
+                You have no open requests. Post one whenever blood is needed.
+              </p>
+            ) : (
+              <div className="stack" style={{ gap: '0.6rem' }}>
+                {activeRequests.slice(0, 3).map((r) => (
+                  <div
+                    key={r.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.7rem 0.9rem' }}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-sm)', background: 'var(--primary)', color: '#fff', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {r.blood_group}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong style={{ display: 'block', fontSize: '0.92rem' }}>{r.patient_case || `Emergency Request #${r.id}`}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                        {r.hospital_name}{r.city ? `, ${r.city}` : ''} &middot; {r.units_needed} unit{r.units_needed > 1 ? 's' : ''} &middot; {r.matched_donors_count || 0} nearby donors
+                      </span>
+                    </div>
+                    <span className={`badge ${r.is_verified ? 'badge-teal' : 'badge-amber'}`}>
+                      {r.is_verified ? 'Verified' : 'Pending'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ================================================================= */}
       {/* TAB 1: MY ACTIVE REQUESTS                                        */}
@@ -440,7 +451,7 @@ export default function RequesterDashboard() {
               Post Emergency Blood Request
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
-              Emergency requests immediately alert compatible registered donors across Sukkur &amp; Rohri.
+              Emergency requests immediately alert compatible registered donors near the hospital.
             </p>
 
             <form onSubmit={handleSubmit}>
@@ -470,23 +481,25 @@ export default function RequesterDashboard() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <label className="field">
-                  Hospital / Center in Sukkur
-                  <select value={form.hospital_name} onChange={update('hospital_name')} required>
-                    {SUKKUR_HOSPITALS.map((h) => (
-                      <option key={h} value={h}>{h}</option>
-                    ))}
-                  </select>
+                  Hospital / Center
+                  <input
+                    type="text"
+                    placeholder="e.g. City General Hospital"
+                    value={form.hospital_name}
+                    onChange={update('hospital_name')}
+                    required
+                  />
                 </label>
 
                 <label className="field">
-                  Sukkur Area / Sector
-                  <select value={form.city} onChange={update('city')} required>
-                    <option value="Sukkur IBA Area">Sukkur IBA / Airport Rd</option>
-                    <option value="Civil Hospital Sukkur">Minara Road / Civil Hospital</option>
-                    <option value="Military Road Sukkur">Military Road / Cantonment</option>
-                    <option value="Rohri">Rohri City</option>
-                    <option value="Pano Aqil">Pano Aqil Area</option>
-                  </select>
+                  City
+                  <input
+                    type="text"
+                    placeholder="e.g. Karachi"
+                    value={form.city}
+                    onChange={update('city')}
+                    required
+                  />
                 </label>
               </div>
 
@@ -553,7 +566,7 @@ export default function RequesterDashboard() {
               </label>
 
               <label className="field">
-                Hospital Prescription / Slip Reference (Section 3.5 Verification)
+                Hospital Prescription / Slip Reference
                 <input
                   type="text"
                   placeholder="e.g. Doctor slip #CS-8921 or Doctor on Duty Name"
@@ -586,7 +599,7 @@ export default function RequesterDashboard() {
                 <RadarIcon size={20} /> Matched Donors Radar
               </h3>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-                Ranked by blood compatibility, geographical proximity in Sukkur, and post-donation recency.
+                Ranked by blood compatibility, geographical proximity, and post-donation recency.
               </p>
             </div>
 
@@ -624,7 +637,7 @@ export default function RequesterDashboard() {
             </div>
           )}
 
-          {radarLoading && <p className="empty-state">Scanning Sukkur donor network for compatible matches...</p>}
+          {radarLoading && <p className="empty-state">Scanning the donor network for compatible matches...</p>}
           {radarError && <p className="error-banner">{radarError}</p>}
 
           {!radarLoading && radarMatches && (
@@ -640,7 +653,7 @@ export default function RequesterDashboard() {
                 <div className="form-card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
                   <RadarIcon size={36} />
                   <p className="empty-state" style={{ marginTop: '0.75rem' }}>
-                    No currently available donors matching this request in Sukkur &amp; Rohri.
+                    No currently available donors matching this request nearby.
                   </p>
                   <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
                     Donors in medical cooldown or paused availability are automatically excluded for safety.
@@ -664,7 +677,7 @@ export default function RequesterDashboard() {
                         </div>
 
                         <p className="record-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.5rem' }}>
-                          <MapPinIcon size={14} /> {m.city || 'Sukkur'}
+                          <MapPinIcon size={14} /> {m.city || '—'}
                           {m.is_blood_group_verified && (
                             <span style={{ color: '#15803d', marginLeft: 'auto', fontWeight: 600 }}>
                               <ShieldCheckIcon size={12} /> Group Verified

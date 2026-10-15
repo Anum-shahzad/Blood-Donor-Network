@@ -24,7 +24,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = getUser();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'tab-analytics';
+  const activeTab = searchParams.get('tab') || 'tab-home';
 
   const [analytics, setAnalytics] = useState(null);
   const [requests, setRequests] = useState([]);
@@ -34,7 +34,6 @@ export default function AdminDashboard() {
     cooldown_days: '90',
     max_requests_per_day: '3',
     sms_gateway_enabled: 'true',
-    allowed_zones: 'Sukkur IBA Area, Minara Road / Civil Hospital, Military Road / Cantonment, Rohri City, Pano Aqil',
   });
 
   const [error, setError] = useState('');
@@ -169,8 +168,10 @@ export default function AdminDashboard() {
     setError('');
     setSuccessMsg('');
     try {
-      await apiPut('/api/admin/policies', policies);
-      setSuccessMsg('System policies and Sukkur network parameters successfully saved.');
+      // allowed_zones is a legacy, unused setting; never write it back.
+      const { allowed_zones: _unused, ...payload } = policies;
+      await apiPut('/api/admin/policies', payload);
+      setSuccessMsg('System policies saved.');
       loadPolicies();
     } catch (err) {
       setError(err.message);
@@ -198,6 +199,7 @@ export default function AdminDashboard() {
 
   if (!user) return null;
 
+  const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const pendingRequestsCount = requests.filter((r) => !r.is_verified).length;
   const pendingDonorsCount = donors.filter((d) => !d.is_blood_group_verified).length;
 
@@ -205,9 +207,9 @@ export default function AdminDashboard() {
     <DashboardLayout user={user} onLogout={handleLogout}>
       {/* Top Header */}
       <div className="dashboard-header">
-        <h1>Sukkur Blood Network &mdash; Administrative Operations</h1>
+        <h1>Hi, {firstName}</h1>
         <p className="dashboard-subtext">
-          Review emergency requests, enforce compliance, monitor network analytics, and configure district-wide policies.
+          Here&apos;s what needs your attention across the network today.
         </p>
       </div>
 
@@ -218,78 +220,60 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Overview Stat Cards */}
-      <div className="stat-grid">
-        <div className="stat-card">
-          <div className="stat-card-label">Total Requests</div>
-          <div className="stat-card-value">{requests.length}</div>
+      {/* ================================================================= */}
+      {/* HOME: QUICK OVERVIEW                                             */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-home' && (
+        <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          <div className="stat-grid" style={{ marginBottom: 0 }}>
+            <div className="stat-card">
+              <div className="stat-card-label">Total Requests</div>
+              <div className="stat-card-value">{requests.length}</div>
+            </div>
+            <div className="stat-card stat-card--accent">
+              <div className="stat-card-label">Pending Verification</div>
+              <div className="stat-card-value">{pendingRequestsCount}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Registered Donors</div>
+              <div className="stat-card-value">{donors.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Unverified Donors</div>
+              <div className="stat-card-value">{pendingDonorsCount}</div>
+            </div>
+          </div>
+
+          <div className="form-card">
+            <h3 style={{ margin: '0 0 0.85rem', fontSize: '1.05rem' }}>Needs your attention</h3>
+            <div className="stack" style={{ gap: '0.6rem' }}>
+              {[
+                { label: 'Requests awaiting verification', count: pendingRequestsCount, tab: 'tab-verifications' },
+                { label: 'Donors awaiting blood group verification', count: pendingDonorsCount, tab: 'tab-donors' },
+                { label: 'Rate-limit flags to review', count: fraudData?.rate_limit_flags?.length || 0, tab: 'tab-fraud' },
+              ].map((item) => (
+                <div
+                  key={item.tab}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.85rem', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.7rem 0.9rem' }}
+                >
+                  <span style={{ fontSize: '0.92rem' }}>
+                    <strong style={{ marginRight: '0.5rem', color: item.count > 0 ? 'var(--primary)' : 'var(--ink-muted)' }}>{item.count}</strong>
+                    {item.label}
+                  </span>
+                  {item.count > 0 && (
+                    <button onClick={() => setTab(item.tab)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}>
+                      Review
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="stat-card stat-card--accent">
-          <div className="stat-card-label">Pending Verification</div>
-          <div className="stat-card-value">{pendingRequestsCount}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Registered Donors</div>
-          <div className="stat-card-value">{donors.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Unverified Donors</div>
-          <div className="stat-card-value">{pendingDonorsCount}</div>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <nav className="tab-nav" aria-label="Admin Dashboard Tabs">
-        <button
-          onClick={() => setTab('tab-analytics')}
-          className={`tab-btn ${activeTab === 'tab-analytics' ? 'is-active' : ''}`}
-        >
-          <GaugeIcon size={16} />
-          <span>Sukkur Network Analytics</span>
-        </button>
-
-        <button
-          onClick={() => setTab('tab-verifications')}
-          className={`tab-btn ${activeTab === 'tab-verifications' ? 'is-active' : ''}`}
-        >
-          <ShieldCheckIcon size={16} />
-          <span>Request Verification Queue</span>
-          {pendingRequestsCount > 0 && <span className="tab-badge">{pendingRequestsCount}</span>}
-        </button>
-
-        <button
-          onClick={() => setTab('tab-donors')}
-          className={`tab-btn ${activeTab === 'tab-donors' ? 'is-active' : ''}`}
-        >
-          <UsersIcon size={16} />
-          <span>Donor Registry &amp; Compliance</span>
-          {pendingDonorsCount > 0 && <span className="tab-badge">{pendingDonorsCount}</span>}
-        </button>
-
-        <button
-          onClick={() => setTab('tab-fraud')}
-          className={`tab-btn ${activeTab === 'tab-fraud' ? 'is-active' : ''}`}
-        >
-          <AlertCircleIcon size={16} />
-          <span>Abuse &amp; Fraud Reports</span>
-          {fraudData?.rate_limit_flags?.length > 0 && (
-            <span className="tab-badge" style={{ background: 'var(--amber)', color: '#fff' }}>
-              {fraudData.rate_limit_flags.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setTab('tab-settings')}
-          className={`tab-btn ${activeTab === 'tab-settings' ? 'is-active' : ''}`}
-        >
-          <SlidersIcon size={16} />
-          <span>System Policies &amp; Settings</span>
-        </button>
-      </nav>
+      )}
 
       {/* ================================================================= */}
-      {/* TAB 1: SUKKUR NETWORK ANALYTICS                                  */}
+      {/* TAB 1: NETWORK ANALYTICS                                         */}
       {/* ================================================================= */}
       {activeTab === 'tab-analytics' && (
         <div className="tab-content stack" style={{ gap: '1.5rem' }}>
@@ -326,7 +310,7 @@ export default function AdminDashboard() {
                 Blood Group Supply vs. Demand Matrix
               </h3>
               <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
-                Compares units needed for active requests against available registered donors in Sukkur
+                Compares units needed for active requests against available registered donors
               </p>
 
               <div className="data-table-wrap">
@@ -360,10 +344,10 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Sukkur & Rohri Area Distribution */}
+            {/* Area Distribution */}
             <div className="form-card">
               <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.4rem' }}>
-                Sukkur &amp; Rohri Area Breakdown
+                Area Breakdown
               </h3>
               <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
                 Emergency volume by hospital and administrative sectors
@@ -556,7 +540,7 @@ export default function AdminDashboard() {
                       <td>
                         <span className="badge badge-red">{d.blood_group || 'Unset'}</span>
                       </td>
-                      <td>{d.city || 'Sukkur'}</td>
+                      <td>{d.city || '—'}</td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                           <span className={`badge ${d.is_available ? 'badge-teal' : 'badge-neutral'}`}>
@@ -710,7 +694,7 @@ export default function AdminDashboard() {
               System Policies &amp; Medical Safeguards
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
-              Configure district-wide rules, WHO cooldown enforcement, and emergency notification settings
+              Configure network-wide rules, WHO cooldown enforcement, and emergency notification settings
             </p>
 
             <form onSubmit={savePoliciesSubmit} className="stack" style={{ gap: '1rem' }}>
@@ -739,26 +723,6 @@ export default function AdminDashboard() {
                   onChange={(e) => setPolicies((p) => ({ ...p, max_requests_per_day: e.target.value }))}
                   required
                 />
-              </label>
-
-              <label className="field">
-                Configured Sukkur Zone Geofences
-                <textarea
-                  rows="3"
-                  value={policies.allowed_zones}
-                  onChange={(e) => setPolicies((p) => ({ ...p, allowed_zones: e.target.value }))}
-                  required
-                  style={{
-                    fontFamily: 'inherit',
-                    fontSize: '0.88rem',
-                    padding: '0.65rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-strong)',
-                  }}
-                />
-                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
-                  Comma-separated list of recognized medical sectors in Sukkur and Rohri.
-                </span>
               </label>
 
               <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
