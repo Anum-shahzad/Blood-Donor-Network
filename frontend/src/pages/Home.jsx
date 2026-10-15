@@ -4,6 +4,7 @@ import { getUser, dashboardPathFor } from '../auth/session.js';
 import EmergencyWidget from '../components/landing/EmergencyWidget.jsx';
 import BloodCompatibility from '../components/landing/BloodCompatibility.jsx';
 import ThemeToggle from '../components/landing/ThemeToggle.jsx';
+import LogoMark from '../components/LogoMark.jsx';
 import useTheme from '../lib/useTheme.js';
 import useMotion from '../lib/useMotion.js';
 import '../styles/landing.css';
@@ -61,12 +62,7 @@ export default function Home() {
         <div className="lp-container lp-header-inner">
           <a href="#" className="lp-logo" aria-label="Blood Donor Network home">
             <span className="lp-logo-mark" aria-hidden="true">
-              <svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M11 1C11 1 1 12.5 1 18C1 22.4183 5.47715 26 11 26C16.5228 26 21 22.4183 21 18C21 12.5 11 1 11 1Z"
-                  fill="var(--lp-logo-drop)"
-                />
-              </svg>
+              <LogoMark height={30} />
             </span>
             Blood Donor Network
           </a>
@@ -471,7 +467,12 @@ export default function Home() {
       <footer className="lp-site-footer">
         <div className="lp-container lp-footer-inner">
           <div className="lp-footer-brand">
-            <span className="lp-logo">Blood Donor Network</span>
+            <span className="lp-logo">
+              <span className="lp-logo-mark" aria-hidden="true">
+                <LogoMark variant="white" height={30} />
+              </span>
+              Blood Donor Network
+            </span>
             <p>A coordinated network for blood emergencies.</p>
           </div>
           <nav className="lp-footer-nav" aria-label="Footer">

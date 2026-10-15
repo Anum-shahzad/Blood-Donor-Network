@@ -193,21 +193,8 @@ button, input, select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--primary);
-  color: #fff;
   flex-shrink: 0;
-}
-
-.brand-mark svg {
-  width: 19px;
-  height: 19px;
-}
-
-.brand-mark--on-dark {
-  background: rgba(255, 255, 255, 0.14);
+  line-height: 0;
 }
 
 /* ==========================================================================

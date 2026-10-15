@@ -28,7 +28,8 @@
   --lp-heading: #3B040B;       /* headings, logo text, secondary button */
   --lp-red-text: #7A0B1A;      /* section labels, active nav, links */
   --lp-pink: var(--lp-red-text);/* bright emphasis: clocks, urgent tags, step numbers */
-  --lp-logo-drop: var(--lp-red-primary);
+  --logo-a: #E44747;               /* logo gradient start (brand red) */
+  --logo-b: #781D32;               /* logo gradient end (deep maroon) */
   --lp-header-bg: rgba(251,248,246,0.92);
 
   /* surfaces */
@@ -105,7 +106,8 @@
   --lp-heading: #FCE9DC;
   --lp-red-text: #CB7276;
   --lp-pink: #DF9699;
-  --lp-logo-drop: #811523;
+  --logo-a: #ffffff;               /* dark mode: solid white monochrome symbol */
+  --logo-b: #ffffff;
   --lp-header-bg: #151515;
   --lp-header-border: #2D2D2D;
   --lp-nav-link: #CDC4C1;
@@ -195,7 +197,8 @@
 /* Header spans the full window: logo hard left, theme toggle + CTA hard right */
 .lp-site-header .lp-header-inner { max-width: none; margin: 0; padding: 0 24px; }
 .lp-logo { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: .98rem; letter-spacing: -0.005em; text-decoration: none; color: var(--lp-logo-text); }
-.lp-logo-mark svg { width: 16px; height: 19px; }
+.lp-logo-mark { display: inline-flex; line-height: 0; }
+.lp-logo-mark svg { height: 30px; width: auto; }
 .lp-main-nav { display: flex; gap: 26px; }
 .lp-main-nav a { text-decoration: none; font-size: .84rem; font-weight: 500; color: var(--lp-nav-link); letter-spacing: .01em; }
 .lp-main-nav a:hover { color: var(--lp-red-text); }
@@ -693,7 +696,6 @@
 @keyframes lp-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes lp-node-pop { from { opacity: 0; transform: scale(.7) translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes lp-arrow-draw { from { opacity: 1; clip-path: inset(-6px 100% -6px 0); } to { opacity: 1; clip-path: inset(-6px -3px -6px 0); } }
-@keyframes lp-heartbeat { 0%, 40%, 100% { transform: scale(1); } 10% { transform: scale(1.14); } 20% { transform: scale(1); } 28% { transform: scale(1.09); } }
 @keyframes lp-dot-ping { 0% { box-shadow: 0 0 0 0 rgba(var(--lp-ring-rgb), .6); } 70%, 100% { box-shadow: 0 0 0 7px rgba(var(--lp-ring-rgb), 0); } }
 @keyframes lp-ring-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--lp-ring-rgb), .45); } 70%, 100% { box-shadow: 0 0 0 14px rgba(var(--lp-ring-rgb), 0); } }
 @keyframes lp-badge-glow { 0% { box-shadow: 0 0 0 0 rgba(255,77,94,.42); } 70%, 100% { box-shadow: 0 0 0 12px rgba(255,77,94,0); } }
@@ -724,8 +726,7 @@
   .lp-stagger > :nth-child(7) { --i: 6; } .lp-stagger > :nth-child(8) { --i: 7; } .lp-stagger > :nth-child(9) { --i: 8; }
   .lp-stagger.lp-is-visible > * { animation: lp-rise .7s cubic-bezier(.2,.7,.2,1) backwards; animation-delay: calc(80ms + var(--i, 0) * 90ms); }
 
-  /* Header: logo heartbeat, Emergency dot ping, nav underline */
-  .lp-logo-mark svg { transform-origin: 50% 75%; animation: lp-heartbeat 2.8s ease-in-out infinite; }
+  /* Header: Emergency dot ping, nav underline */
   .lp-main-nav a.lp-nav-emergency::before { animation: lp-dot-ping 2s ease-out infinite; }
   .lp-main-nav a:not(.lp-nav-emergency):not(.lp-nav-current) { position: relative; }
   .lp-main-nav a:not(.lp-nav-emergency):not(.lp-nav-current)::after {

@@ -6,6 +6,7 @@ import ThemeToggle from '../components/landing/ThemeToggle.jsx';
 import useTheme from '../lib/useTheme.js';
 import { timeAgo } from '../lib/format.js';
 import '../styles/landing.css';
+import LogoMark from '../components/LogoMark.jsx';
 
 export default function Emergency() {
   const { open, loading, error, now } = useOpenRequests();
@@ -20,9 +21,7 @@ export default function Emergency() {
         <div className="lp-container lp-header-inner">
           <Link to="/" className="lp-logo" aria-label="Blood Donor Network home">
             <span className="lp-logo-mark" aria-hidden="true">
-              <svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11 1C11 1 1 12.5 1 18C1 22.4183 5.47715 26 11 26C16.5228 26 21 22.4183 21 18C21 12.5 11 1 11 1Z" fill="var(--lp-logo-drop)" />
-              </svg>
+              <LogoMark height={30} />
             </span>
             Blood Donor Network
           </Link>
