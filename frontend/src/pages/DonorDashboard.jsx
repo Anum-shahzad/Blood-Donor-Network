@@ -61,6 +61,7 @@ export default function DonorDashboard() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [toggling, setToggling] = useState(false);
+  const [glow, setGlow] = useState(false);
   const [actingOn, setActingOn] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -158,6 +159,10 @@ export default function DonorDashboard() {
     const next = !profile.is_available;
     // Flip instantly so the switch animates right away; roll back if the server says no.
     setProfile((p) => ({ ...p, is_available: next }));
+    if (next) {
+      setGlow(true);
+      setTimeout(() => setGlow(false), 1000);
+    }
     setToggling(true);
     setError('');
     setSuccessMsg('');
@@ -322,36 +327,22 @@ export default function DonorDashboard() {
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
       {/* Dashboard Top Header */}
-      <div className="dashboard-header">
-        <h1>Hi, {firstName}</h1>
-        <p className="dashboard-subtext">
-          Here&apos;s a quick look at your donor activity today.
-        </p>
-      </div>
-
-      {error && <p className="error-banner">{error}</p>}
-      {successMsg && (
-        <div className="badge badge-teal" style={{ display: 'block', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
-          {successMsg}
-        </div>
-      )}
-
-      {/* Quick Status Bar */}
-      <div className="quick-status-bar">
-        <div className="quick-status-group">
-          <div className="quick-pill" style={{ borderLeft: '3px solid var(--primary)' }}>
-            <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{profile?.blood_group || '—'}</span>
-            {profile?.city && (
-              <span style={{ color: 'var(--ink-muted)', fontSize: '0.75rem' }}>{profile.city}</span>
-            )}
-          </div>
+      <div
+        className="dashboard-header"
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}
+      >
+        <div>
+          <h1>Hi, {firstName}</h1>
+          <p className="dashboard-subtext">
+            Here&apos;s a quick look at your donor activity today.
+          </p>
         </div>
 
-        <div className="quick-status-group" style={{ gap: '1rem' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', fontWeight: 600 }}>
-            Available to donate
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: profile?.is_available ? 'var(--success)' : 'var(--ink-muted)', transition: 'color 0.3s ease' }}>
+            {profile?.is_available ? 'Available to donate' : 'Not available'}
           </span>
-          <div className={`toggle-wrap${profile?.is_available ? ' is-on' : ''}`}>
+          <div className={`toggle-wrap${profile?.is_available ? ' is-on' : ''}${glow ? ' is-glowing' : ''}`}>
             <span className="toggle-halo" aria-hidden="true" />
             <button
               type="button"
@@ -364,10 +355,16 @@ export default function DonorDashboard() {
             >
               <span className="toggle-knob" />
             </button>
-            <span className="toggle-label">{profile?.is_available ? 'ON' : 'OFF'}</span>
           </div>
         </div>
       </div>
+
+      {error && <p className="error-banner">{error}</p>}
+      {successMsg && (
+        <div className="badge badge-teal" style={{ display: 'block', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          {successMsg}
+        </div>
+      )}
 
       {/* ================================================================= */}
       {/* HOME: QUICK OVERVIEW                                             */}
