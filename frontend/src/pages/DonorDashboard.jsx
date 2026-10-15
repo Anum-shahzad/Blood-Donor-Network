@@ -322,7 +322,7 @@ export default function DonorDashboard() {
     <DashboardLayout user={user} onLogout={handleLogout}>
       {/* Dashboard Top Header */}
       <div className="dashboard-header">
-        <h1>Hi, {firstName} 👋</h1>
+        <h1>Hi, {firstName}</h1>
         <p className="dashboard-subtext">
           Here&apos;s a quick look at your donor activity today.
         </p>
@@ -338,33 +338,20 @@ export default function DonorDashboard() {
       {/* Quick Status Bar */}
       <div className="quick-status-bar">
         <div className="quick-status-group">
-          <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', fontWeight: 600 }}>Emergency Status:</span>
           <button
+            type="button"
+            role="switch"
+            aria-checked={Boolean(profile?.is_available)}
+            aria-label="Available to donate"
             onClick={toggleAvailability}
             disabled={toggling || !hasProfile}
-            className={`quick-pill quick-pill-btn ${profile?.is_available ? 'state-available' : ''}`}
-            style={{
-              background: profile?.is_available ? 'var(--success-bg)' : 'var(--paper)',
-              borderColor: profile?.is_available ? '#86efac' : 'var(--border)',
-              color: profile?.is_available ? '#15803d' : 'var(--ink-muted)',
-              cursor: 'pointer',
-            }}
+            className={`toggle-switch${profile?.is_available ? ' is-on' : ''}`}
           >
-            <span className={profile?.is_available ? 'pulse-dot' : ''} style={{ background: profile?.is_available ? 'var(--success)' : 'var(--ink-muted)' }} />
-            {toggling
-              ? 'Updating...'
-              : profile?.is_available
-              ? 'Available to Donate'
-              : 'Not Available (Paused)'}
+            <span className="toggle-knob" />
           </button>
-
-          <div className="quick-pill">
-            <ClockIcon size={14} />
-            <span style={{ color: 'var(--ink-muted)' }}>Eligibility:</span>
-            <strong style={{ color: isEligible ? 'var(--success)' : 'var(--amber)' }}>
-              {isEligible ? 'Eligible Now' : `In Cooldown (${daysRemaining}d)`}
-            </strong>
-          </div>
+          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: profile?.is_available ? 'var(--success)' : 'var(--ink-muted)' }}>
+            {profile?.is_available ? 'Available to donate' : 'Not available'}
+          </span>
         </div>
 
         <div className="quick-status-group">
@@ -507,7 +494,7 @@ export default function DonorDashboard() {
                   Matching Emergency Requests ({donorGroup})
                 </h3>
               </div>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--ink-muted)', maxWidth: 'none' }}>
                 As a registered <strong style={{ color: 'var(--primary)' }}>{donorGroup} donor</strong>, you can safely donate to patients requiring <strong style={{ color: 'var(--primary-dark)' }}>{recipientsList}</strong> blood.
               </p>
             </div>
@@ -1199,19 +1186,6 @@ export default function DonorDashboard() {
                   </label>
                 </div>
               </div>
-
-              {/* Language Selection */}
-              <label className="field" style={{ marginBottom: 0 }}>
-                App Language (Optional Multi-language)
-                <select
-                  value={settingsForm.preferred_language}
-                  onChange={(e) => setSettingsForm((f) => ({ ...f, preferred_language: e.target.value }))}
-                >
-                  <option value="en">English</option>
-                  <option value="ur">Urdu (اردو)</option>
-                  <option value="sd">Sindhi (سنڌي)</option>
-                </select>
-              </label>
 
               <button type="submit" disabled={savingSettings} className="btn btn-primary">
                 {savingSettings ? 'Saving...' : 'Save Settings & Preferences'}
