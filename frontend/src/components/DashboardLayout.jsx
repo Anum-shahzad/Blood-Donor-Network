@@ -1,18 +1,58 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 import BrandMark from './BrandMark.jsx';
-import { GridIcon, HomeIcon, MenuIcon } from './icons.jsx';
+import {
+  GridIcon,
+  HomeIcon,
+  MenuIcon,
+  DropletIcon,
+  ClockIcon,
+  HeartIcon,
+  IdCardIcon,
+  SlidersIcon,
+  FileTextIcon,
+  RadarIcon,
+  ArchiveIcon,
+  GaugeIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+  AlertCircleIcon,
+} from './icons.jsx';
 
-// Only routes that actually exist in App.jsx are listed here — one
-// dashboard route per role, plus the public home page. Nothing invented.
 function navItemsFor(role) {
-  const dashboardPath =
-    role === 'donor' ? '/donor/dashboard' : role === 'requester' ? '/requester/dashboard' : '/admin/dashboard';
+  if (role === 'donor') {
+    return [
+      { to: '/donor/dashboard?tab=tab-feed', label: 'Emergency Matches', icon: DropletIcon, isDefault: true },
+      { to: '/donor/dashboard?tab=tab-cooldown', label: 'Cooldown & History', icon: ClockIcon },
+      { to: '/donor/dashboard?tab=tab-commitments', label: 'My Commitments', icon: HeartIcon },
+      { to: '/donor/dashboard?tab=tab-card', label: 'Identity Card', icon: IdCardIcon },
+      { to: '/donor/dashboard?tab=tab-settings', label: 'Donor Settings', icon: SlidersIcon },
+      { to: '/', label: 'Home', icon: HomeIcon },
+    ];
+  }
 
-  return [
-    { to: dashboardPath, label: 'Dashboard', icon: GridIcon, end: true },
-    { to: '/', label: 'Home', icon: HomeIcon },
-  ];
+  if (role === 'requester') {
+    return [
+      { to: '/requester/dashboard?tab=tab-active', label: 'Active Requests', icon: ClockIcon, isDefault: true },
+      { to: '/requester/dashboard?tab=tab-post', label: 'Post Emergency', icon: FileTextIcon },
+      { to: '/requester/dashboard?tab=tab-radar', label: 'Matched Radar', icon: RadarIcon },
+      { to: '/requester/dashboard?tab=tab-archive', label: 'Requests Archive', icon: ArchiveIcon },
+      { to: '/', label: 'Home', icon: HomeIcon },
+    ];
+  }
+
+  if (role === 'admin') {
+    return [
+      { to: '/admin/dashboard?tab=tab-analytics', label: 'Network Analytics', icon: GaugeIcon, isDefault: true },
+      { to: '/admin/dashboard?tab=tab-verifications', label: 'Verification Queue', icon: ShieldCheckIcon },
+      { to: '/admin/dashboard?tab=tab-donors', label: 'Donor Registry', icon: UsersIcon },
+      { to: '/admin/dashboard?tab=tab-fraud', label: 'Abuse & Fraud', icon: AlertCircleIcon },
+      { to: '/admin/dashboard?tab=tab-settings', label: 'Policies & Settings', icon: SlidersIcon },
+      { to: '/', label: 'Home', icon: HomeIcon },
+    ];
+  }
+
+  return [{ to: '/', label: 'Home', icon: HomeIcon }];
 }
 
 export default function DashboardLayout({ user, onLogout, children }) {

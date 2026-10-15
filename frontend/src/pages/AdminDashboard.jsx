@@ -1,35 +1,123 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { apiGet, apiPatch } from '../api/client.js';
+import { useEffect, useState, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { apiGet, apiPatch, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
-import { formatDateTime, humanizeStatus } from '../lib/format.js';
+import {
+  GaugeIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+  AlertCircleIcon,
+  SlidersIcon,
+  HospitalIcon,
+  CheckCircleIcon,
+  DropletIcon,
+  MapPinIcon,
+  ClockIcon,
+  PhoneIcon,
+} from '../components/icons.jsx';
+import { formatDateTime, formatDate, humanizeStatus } from '../lib/format.js';
+
+const REFRESH_MS = 25 * 1000;
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = getUser();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'tab-analytics';
+
+  const [analytics, setAnalytics] = useState(null);
   const [requests, setRequests] = useState([]);
   const [donors, setDonors] = useState([]);
+  const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
+  const [policies, setPolicies] = useState({
+    cooldown_days: '90',
+    max_requests_per_day: '3',
+    sms_gateway_enabled: 'true',
+    allowed_zones: 'Sukkur IBA Area, Minara Road / Civil Hospital, Military Road / Cantonment, Rohri City, Pano Aqil',
+  });
+
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [donorSearch, setDonorSearch] = useState('');
+  const [savingPolicies, setSavingPolicies] = useState(false);
 
   useEffect(() => {
-    loadRequests();
-    loadDonors();
+    loadAll();
+    const t = setInterval(() => {
+      if (!document.hidden) loadAll();
+    }, REFRESH_MS);
+    return () => clearInterval(t);
   }, []);
 
+  function setTab(tabId) {
+    setSearchParams({ tab: tabId });
+    setError('');
+    setSuccessMsg('');
+  }
+
+  function loadAll() {
+    loadAnalytics();
+    loadRequests();
+    loadDonors();
+    loadFraudReports();
+    loadPolicies();
+  }
+
+  function loadAnalytics() {
+    apiGet('/api/admin/analytics')
+      .then(setAnalytics)
+      .catch((err) => setError(err.message));
+  }
+
   function loadRequests() {
-    apiGet('/api/admin/requests').then(setRequests).catch((err) => setError(err.message));
+    apiGet('/api/admin/requests')
+      .then(setRequests)
+      .catch((err) => setError(err.message));
   }
 
   function loadDonors() {
-    apiGet('/api/admin/donors').then(setDonors).catch((err) => setError(err.message));
+    apiGet('/api/admin/donors')
+      .then(setDonors)
+      .catch((err) => setError(err.message));
+  }
+
+  function loadFraudReports() {
+    apiGet('/api/admin/fraud-reports')
+      .then((data) => setFraudData(data || { reports: [], rate_limit_flags: [] }))
+      .catch(() => {});
+  }
+
+  function loadPolicies() {
+    apiGet('/api/admin/policies')
+      .then((data) => {
+        if (data && typeof data === 'object') setPolicies((p) => ({ ...p, ...data }));
+      })
+      .catch(() => {});
   }
 
   async function verifyRequest(id, verified) {
     setError('');
+    setSuccessMsg('');
     try {
       await apiPatch(`/api/admin/requests/${id}/verify`, { verified });
+      setSuccessMsg(`Request #${id} verification set to: ${verified ? 'Verified' : 'Unverified'}`);
       loadRequests();
+      loadAnalytics();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function rejectRequest(id) {
+    if (!window.confirm(`Reject and cancel request #${id}? This marks it fraudulent or unverified.`)) return;
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPatch(`/api/admin/requests/${id}/reject`, {});
+      setSuccessMsg(`Request #${id} has been rejected and cancelled.`);
+      loadRequests();
+      loadAnalytics();
     } catch (err) {
       setError(err.message);
     }
@@ -37,11 +125,57 @@ export default function AdminDashboard() {
 
   async function verifyDonor(id, verified) {
     setError('');
+    setSuccessMsg('');
     try {
       await apiPatch(`/api/admin/donors/${id}/verify`, { verified });
+      setSuccessMsg(`Donor #${id} blood group set to: ${verified ? 'Verified' : 'Unverified'}`);
+      loadDonors();
+      loadAnalytics();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function toggleDonorSuspension(id, currentlySuspended) {
+    const next = !currentlySuspended;
+    const action = next ? 'suspend' : 'reinstate';
+    if (!window.confirm(`Are you sure you want to ${action} this donor account?`)) return;
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPatch(`/api/admin/donors/${id}/status`, { is_suspended: next });
+      setSuccessMsg(`Donor #${id} account ${next ? 'suspended' : 'reinstated'}.`);
       loadDonors();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function updateReportStatus(reportId, status) {
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPatch(`/api/admin/fraud-reports/${reportId}`, { status });
+      setSuccessMsg(`Report #${reportId} updated to ${status}.`);
+      loadFraudReports();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function savePoliciesSubmit(e) {
+    e.preventDefault();
+    setSavingPolicies(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPut('/api/admin/policies', policies);
+      setSuccessMsg('System policies and Sukkur network parameters successfully saved.');
+      loadPolicies();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingPolicies(false);
     }
   }
 
@@ -50,110 +184,604 @@ export default function AdminDashboard() {
     navigate('/login');
   }
 
+  const filteredDonors = useMemo(() => {
+    if (!donorSearch.trim()) return donors;
+    const q = donorSearch.toLowerCase();
+    return donors.filter(
+      (d) =>
+        (d.name || '').toLowerCase().includes(q) ||
+        (d.email || '').toLowerCase().includes(q) ||
+        (d.city || '').toLowerCase().includes(q) ||
+        (d.blood_group || '').toLowerCase().includes(q)
+    );
+  }, [donors, donorSearch]);
+
   if (!user) return null;
 
-  // Derived client-side from the requests/donors already loaded above.
-  const pendingRequests = requests.filter((r) => !r.is_verified).length;
-  const pendingDonors = donors.filter((d) => !d.is_blood_group_verified).length;
+  const pendingRequestsCount = requests.filter((r) => !r.is_verified).length;
+  const pendingDonorsCount = donors.filter((d) => !d.is_blood_group_verified).length;
 
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
+      {/* Top Header */}
       <div className="dashboard-header">
-        <h1>Admin dashboard</h1>
-        <p className="dashboard-subtext">Review and verify requests and donor blood groups.</p>
+        <h1>Sukkur Blood Network &mdash; Administrative Operations</h1>
+        <p className="dashboard-subtext">
+          Review emergency requests, enforce compliance, monitor network analytics, and configure district-wide policies.
+        </p>
       </div>
 
       {error && <p className="error-banner">{error}</p>}
+      {successMsg && (
+        <div className="badge badge-teal" style={{ display: 'block', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          {successMsg}
+        </div>
+      )}
 
+      {/* Overview Stat Cards */}
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-card-label">Total Requests</div>
           <div className="stat-card-value">{requests.length}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Requests Pending Verification</div>
-          <div className="stat-card-value">{pendingRequests}</div>
+        <div className="stat-card stat-card--accent">
+          <div className="stat-card-label">Pending Verification</div>
+          <div className="stat-card-value">{pendingRequestsCount}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-label">Total Donors</div>
+          <div className="stat-card-label">Registered Donors</div>
           <div className="stat-card-value">{donors.length}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-label">Donors Pending Verification</div>
-          <div className="stat-card-value">{pendingDonors}</div>
+          <div className="stat-card-label">Unverified Donors</div>
+          <div className="stat-card-value">{pendingDonorsCount}</div>
         </div>
       </div>
 
-      <h2 style={{ marginTop: 0 }}>Requests</h2>
-      <p className="disclaimer" style={{ borderTop: 'none', paddingTop: 0 }}>
-        Verifying confirms this is a genuine emergency request — it is not
-        a medical judgment. Screening and crossmatching always happen at
-        the donation facility.
-      </p>
-      {requests.length === 0 ? (
-        <p className="empty-state">No requests yet.</p>
-      ) : (
-        requests.map((r) => (
-          <div
-            key={r.id}
-            className={`record-card ${r.is_verified ? 'state-verified' : 'state-unverified'}`}
-          >
-            <div className="record-title">
-              <span>
-                {r.requester_name} — {r.blood_group}
-              </span>
-              <span className={`badge ${r.is_verified ? 'badge-teal' : 'badge-red'}`}>
-                {r.is_verified ? 'Verified' : 'Unverified'}
-              </span>
+      {/* Navigation Tabs */}
+      <nav className="tab-nav" aria-label="Admin Dashboard Tabs">
+        <button
+          onClick={() => setTab('tab-analytics')}
+          className={`tab-btn ${activeTab === 'tab-analytics' ? 'is-active' : ''}`}
+        >
+          <GaugeIcon size={16} />
+          <span>Sukkur Network Analytics</span>
+        </button>
+
+        <button
+          onClick={() => setTab('tab-verifications')}
+          className={`tab-btn ${activeTab === 'tab-verifications' ? 'is-active' : ''}`}
+        >
+          <ShieldCheckIcon size={16} />
+          <span>Request Verification Queue</span>
+          {pendingRequestsCount > 0 && <span className="tab-badge">{pendingRequestsCount}</span>}
+        </button>
+
+        <button
+          onClick={() => setTab('tab-donors')}
+          className={`tab-btn ${activeTab === 'tab-donors' ? 'is-active' : ''}`}
+        >
+          <UsersIcon size={16} />
+          <span>Donor Registry &amp; Compliance</span>
+          {pendingDonorsCount > 0 && <span className="tab-badge">{pendingDonorsCount}</span>}
+        </button>
+
+        <button
+          onClick={() => setTab('tab-fraud')}
+          className={`tab-btn ${activeTab === 'tab-fraud' ? 'is-active' : ''}`}
+        >
+          <AlertCircleIcon size={16} />
+          <span>Abuse &amp; Fraud Reports</span>
+          {fraudData?.rate_limit_flags?.length > 0 && (
+            <span className="tab-badge" style={{ background: 'var(--amber)', color: '#fff' }}>
+              {fraudData.rate_limit_flags.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setTab('tab-settings')}
+          className={`tab-btn ${activeTab === 'tab-settings' ? 'is-active' : ''}`}
+        >
+          <SlidersIcon size={16} />
+          <span>System Policies &amp; Settings</span>
+        </button>
+      </nav>
+
+      {/* ================================================================= */}
+      {/* TAB 1: SUKKUR NETWORK ANALYTICS                                  */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-analytics' && (
+        <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          {/* Key Metrics Grid */}
+          <div className="stat-grid" style={{ marginBottom: 0 }}>
+            <div className="stat-card">
+              <div className="stat-card-label">Active Emergencies</div>
+              <div className="stat-card-value" style={{ color: 'var(--primary)' }}>
+                {analytics?.summary?.active_requests || 0}
+              </div>
             </div>
-            <p className="record-meta">
-              {r.requester_email} · {r.hospital_name}, {r.city} · Status: {humanizeStatus(r.status)}
-              {r.required_by ? ` · Needed by ${formatDateTime(r.required_by)}` : ''}
-            </p>
-            <div className="record-actions">
-              <button onClick={() => verifyRequest(r.id, !r.is_verified)} className="btn-text">
-                {r.is_verified ? 'Un-verify' : 'Verify'}
-              </button>
+            <div className="stat-card">
+              <div className="stat-card-label">Available Active Donors</div>
+              <div className="stat-card-value" style={{ color: '#15803d' }}>
+                {analytics?.summary?.available_donors || 0}
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Fulfillment Rate</div>
+              <div className="stat-card-value">{analytics?.summary?.fulfillment_rate_percent || 0}%</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Donors in Cooldown</div>
+              <div className="stat-card-value" style={{ color: 'var(--amber)' }}>
+                {analytics?.summary?.in_cooldown_donors || 0}
+              </div>
             </div>
           </div>
-        ))
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+            {/* Blood Group Balance Table */}
+            <div className="form-card">
+              <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.4rem' }}>
+                Blood Group Supply vs. Demand Matrix
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
+                Compares units needed for active requests against available registered donors in Sukkur
+              </p>
+
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Blood Group</th>
+                      <th>Units Demanded</th>
+                      <th>Available Donors</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics?.blood_group_balance?.map((b) => {
+                      const shortage = Number(b.units_needed) > Number(b.available_donors);
+                      return (
+                        <tr key={b.blood_group}>
+                          <td><strong className="badge badge-red">{b.blood_group}</strong></td>
+                          <td>{b.units_needed} Bags</td>
+                          <td><strong>{b.available_donors} Donors</strong></td>
+                          <td>
+                            <span className={`badge ${shortage ? 'badge-red' : 'badge-teal'}`}>
+                              {shortage ? 'Shortage Alert' : 'Balanced'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Sukkur & Rohri Area Distribution */}
+            <div className="form-card">
+              <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.4rem' }}>
+                Sukkur &amp; Rohri Area Breakdown
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
+                Emergency volume by hospital and administrative sectors
+              </p>
+
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Area / District</th>
+                      <th>Total Requests</th>
+                      <th>Fulfilled</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics?.area_distribution?.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: '1.5rem' }}>
+                          No location data recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      analytics?.area_distribution?.map((a, i) => (
+                        <tr key={i}>
+                          <td><strong>{a.area}</strong></td>
+                          <td>{a.total_requests} Requests</td>
+                          <td>
+                            <span className="badge badge-teal">{a.fulfilled_count || 0} Completed</span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
-      <h2>Donors</h2>
-      <p className="disclaimer" style={{ borderTop: 'none', paddingTop: 0 }}>
-        Verifying a donor's blood group confirms the platform has some
-        basis for trusting the self-declared group — it is not a lab
-        crossmatch.
-      </p>
-      {donors.length === 0 ? (
-        <p className="empty-state">No donors yet.</p>
-      ) : (
-        donors.map((d) => (
-          <div
-            key={d.id}
-            className={`record-card ${d.is_blood_group_verified ? 'state-verified' : 'state-unverified'}`}
-          >
-            <div className="record-title">
-              <span>
-                {d.name} — {d.blood_group}
-              </span>
-              <span className={`badge ${d.is_blood_group_verified ? 'badge-teal' : 'badge-red'}`}>
-                {d.is_blood_group_verified ? 'Verified' : 'Unverified'}
-              </span>
-            </div>
-            <p className="record-meta">
-              {d.email} · {d.city} ·{' '}
-              <span className={`badge ${d.is_available ? 'badge-teal' : 'badge-neutral'}`}>
-                {d.is_available ? 'Available' : 'Unavailable'}
-              </span>
+      {/* ================================================================= */}
+      {/* TAB 2: REQUEST VERIFICATION QUEUE                                */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-verifications' && (
+        <div className="tab-content stack" style={{ gap: '1.25rem' }}>
+          <div className="form-card" style={{ padding: '1rem 1.25rem' }}>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--ink)' }}>
+              Verifying confirms that a hospital slip, prescription, or medical attendant confirms this emergency. Unverified requests are ordered first.
             </p>
-            <div className="record-actions">
-              <button onClick={() => verifyDonor(d.id, !d.is_blood_group_verified)} className="btn-text">
-                {d.is_blood_group_verified ? 'Un-verify' : 'Verify'}
-              </button>
+          </div>
+
+          {requests.length === 0 ? (
+            <p className="empty-state">No requests in the system.</p>
+          ) : (
+            requests.map((r) => (
+              <div
+                key={r.id}
+                className={`record-card ${r.is_verified ? 'state-verified' : 'state-unverified'}`}
+              >
+                <div className="record-title" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--primary)',
+                        color: '#fff',
+                        fontWeight: 900,
+                        fontSize: '1.15rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {r.blood_group}
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '1rem', display: 'block' }}>
+                        {r.patient_case || `Emergency Request #${r.id}`} &mdash; {r.units_needed} Bag(s)
+                      </strong>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                        {r.hospital_name}, {r.city} &bull; Attendant: {r.attendant_name || r.requester_name}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className={`badge ${r.is_verified ? 'badge-teal' : 'badge-red'}`}>
+                    {r.is_verified ? 'Verified Request' : 'Verification Required'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    background: 'var(--paper)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.65rem 0.85rem',
+                    margin: '0.75rem 0',
+                    fontSize: '0.82rem',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '0.5rem',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>REQUESTER CONTACT</span>
+                    <span>{r.requester_email} {r.contact_phone ? `· ${r.contact_phone}` : ''}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>PRESCRIPTION / SLIP NOTE</span>
+                    <strong>{r.prescription_slip || 'No slip notes attached'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>URGENCY &amp; STATUS</span>
+                    <span>{r.urgency.toUpperCase()} &bull; {humanizeStatus(r.status)}</span>
+                  </div>
+                </div>
+
+                <div className="record-actions">
+                  <button
+                    onClick={() => verifyRequest(r.id, !r.is_verified)}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
+                  >
+                    <ShieldCheckIcon size={14} /> {r.is_verified ? 'Revoke Verification' : 'Approve & Verify Request'}
+                  </button>
+
+                  <button
+                    onClick={() => rejectRequest(r.id)}
+                    className="btn btn-text"
+                    style={{ fontSize: '0.82rem', color: 'var(--primary)', marginLeft: 'auto' }}
+                  >
+                    Reject / Cancel Suspicious Request
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB 3: DONOR REGISTRY & COMPLIANCE                               */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-donors' && (
+        <div className="tab-content stack" style={{ gap: '1.25rem' }}>
+          {/* Search Bar */}
+          <div className="form-card" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="Search donors by name, blood group, city, or email..."
+              value={donorSearch}
+              onChange={(e) => setDonorSearch(e.target.value)}
+              style={{ flex: 1, padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', fontSize: '0.88rem' }}
+            />
+            <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>
+              {filteredDonors.length} Donors Listed
+            </span>
+          </div>
+
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Donor</th>
+                  <th>Blood Group</th>
+                  <th>City / Area</th>
+                  <th>Status</th>
+                  <th>Total Donations</th>
+                  <th>Account Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDonors.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: '2rem' }}>
+                      No matching donors found in the registry.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDonors.map((d) => (
+                    <tr key={d.id}>
+                      <td>
+                        <strong>{d.name}</strong>
+                        <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                          {d.email} {d.phone ? `· ${d.phone}` : ''}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-red">{d.blood_group || 'Unset'}</span>
+                      </td>
+                      <td>{d.city || 'Sukkur'}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span className={`badge ${d.is_available ? 'badge-teal' : 'badge-neutral'}`}>
+                            {d.is_available ? 'Available' : 'Unavailable'}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
+                            {d.current_status || 'AVAILABLE'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>{d.total_donations || (d.last_donation_date ? 1 : 0)} times</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => verifyDonor(d.id, !d.is_blood_group_verified)}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                          >
+                            {d.is_blood_group_verified ? 'Un-verify' : 'Verify Group'}
+                          </button>
+                          <button
+                            onClick={() => toggleDonorSuspension(d.id, d.is_suspended)}
+                            className="btn btn-text"
+                            style={{ fontSize: '0.75rem', color: d.is_suspended ? '#15803d' : 'var(--primary)' }}
+                          >
+                            {d.is_suspended ? 'Reinstate' : 'Suspend'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB 4: ABUSE & FRAUD REPORTS                                     */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-fraud' && (
+        <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          {/* Rate-Limit Anomaly Scanner */}
+          <div className="form-card">
+            <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.35rem' }}>
+              Rate-Limit Velocity Monitoring (&gt;= 2 requests/day)
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
+              Enforces the prototype policy of max 3 emergency requests per day per user/attendant to curb duplicate spam
+            </p>
+
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Requester Name</th>
+                    <th>Contact Phone</th>
+                    <th>Requests in 24 Hours</th>
+                    <th>Safety Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fraudData?.rate_limit_flags?.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', color: '#15803d', padding: '1.5rem' }}>
+                        All requester activity is within standard safe velocity thresholds.
+                      </td>
+                    </tr>
+                  ) : (
+                    fraudData.rate_limit_flags.map((flag) => (
+                      <tr key={flag.user_id}>
+                        <td><strong>{flag.name}</strong> ({flag.email})</td>
+                        <td>{flag.phone || 'Protected'}</td>
+                        <td><strong style={{ color: 'var(--primary)' }}>{flag.request_count_24h} Requests</strong></td>
+                        <td>
+                          <span className={`badge ${flag.request_count_24h >= 3 ? 'badge-red' : 'badge-amber'}`}>
+                            {flag.request_count_24h >= 3 ? 'Rate-Limit Breached' : 'High Velocity Warning'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-        ))
+
+          {/* Submitted Abuse Reports */}
+          <div className="form-card">
+            <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.35rem' }}>
+              Abuse &amp; Suspicious Activity Queue
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
+              User-reported anomalies, fake emergency claims, and unreachable donor declarations
+            </p>
+
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Details</th>
+                    <th>Target</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fraudData?.reports?.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: '1.5rem' }}>
+                        No pending fraud or abuse reports currently logged in the queue.
+                      </td>
+                    </tr>
+                  ) : (
+                    fraudData.reports.map((r) => (
+                      <tr key={r.id}>
+                        <td><span className="badge badge-amber">{r.report_type}</span></td>
+                        <td>{r.details}</td>
+                        <td>{r.target_user_name || r.request_hospital || 'Network entity'}</td>
+                        <td>{formatDate(r.created_at)}</td>
+                        <td><span className="badge badge-neutral">{r.status}</span></td>
+                        <td>
+                          <button
+                            onClick={() => updateReportStatus(r.id, 'resolved')}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                          >
+                            Resolve
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB 5: SYSTEM POLICIES & SETTINGS                                */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-settings' && (
+        <div className="tab-content" style={{ maxWidth: 640, margin: '0 auto' }}>
+          <div className="form-card">
+            <h3 style={{ marginTop: 0, fontSize: '1.2rem', marginBottom: '0.35rem' }}>
+              System Policies &amp; Medical Safeguards
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
+              Configure district-wide rules, WHO cooldown enforcement, and emergency notification settings
+            </p>
+
+            <form onSubmit={savePoliciesSubmit} className="stack" style={{ gap: '1rem' }}>
+              <label className="field">
+                Standard Post-Donation Cooldown (Days)
+                <input
+                  type="number"
+                  min="60"
+                  max="180"
+                  value={policies.cooldown_days}
+                  onChange={(e) => setPolicies((p) => ({ ...p, cooldown_days: e.target.value }))}
+                  required
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                  Standard WHO and Safe Blood Transfusion Programme (SBTP) interval is 90 days.
+                </span>
+              </label>
+
+              <label className="field">
+                Maximum Requests Per Day Per Phone / User
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={policies.max_requests_per_day}
+                  onChange={(e) => setPolicies((p) => ({ ...p, max_requests_per_day: e.target.value }))}
+                  required
+                />
+              </label>
+
+              <label className="field">
+                Configured Sukkur Zone Geofences
+                <textarea
+                  rows="3"
+                  value={policies.allowed_zones}
+                  onChange={(e) => setPolicies((p) => ({ ...p, allowed_zones: e.target.value }))}
+                  required
+                  style={{
+                    fontFamily: 'inherit',
+                    fontSize: '0.88rem',
+                    padding: '0.65rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-strong)',
+                  }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                  Comma-separated list of recognized medical sectors in Sukkur and Rohri.
+                </span>
+              </label>
+
+              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '0.9rem' }}>Emergency SMS &amp; WhatsApp Gateway</strong>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+                    Enable dispatch simulations to registered verified donors
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={policies.sms_gateway_enabled === 'true'}
+                  onChange={(e) => setPolicies((p) => ({ ...p, sms_gateway_enabled: e.target.checked ? 'true' : 'false' }))}
+                  style={{ width: 18, height: 18, accentColor: 'var(--primary)' }}
+                />
+              </label>
+
+              <button type="submit" disabled={savingPolicies} className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                {savingPolicies ? 'Saving Policies...' : 'Save System Policies'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </DashboardLayout>
   );

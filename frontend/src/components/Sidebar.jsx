@@ -1,4 +1,4 @@
-import { NavLink, Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import BrandMark from './BrandMark.jsx';
 import { LogoutIcon } from './icons.jsx';
 
@@ -6,6 +6,8 @@ const ROLE_LABELS = { donor: 'Donor', requester: 'Requester', admin: 'Admin' };
 
 export default function Sidebar({ user, navItems, onLogout, open, onNavigate }) {
   const initials = user?.name ? user.name.trim().charAt(0).toUpperCase() : '?';
+  const location = useLocation();
+  const currentPathWithSearch = location.pathname + location.search;
 
   return (
     <aside className={`sidebar${open ? ' is-open' : ''}`}>
@@ -15,18 +17,23 @@ export default function Sidebar({ user, navItems, onLogout, open, onNavigate }) 
       </Link>
 
       <nav className="sidebar-nav">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={onNavigate}
-            className={({ isActive }) => `sidebar-link${isActive ? ' is-active' : ''}`}
-          >
-            <item.icon size={18} />
-            {item.label}
-          </NavLink>
-        ))}
+        {navItems.map((item) => {
+          const isActive = item.to.includes('?')
+            ? currentPathWithSearch === item.to || (location.pathname === item.to.split('?')[0] && !location.search && item.isDefault)
+            : location.pathname === item.to;
+
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={onNavigate}
+              className={`sidebar-link${isActive ? ' is-active' : ''}`}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="sidebar-footer">
