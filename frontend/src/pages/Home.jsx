@@ -33,16 +33,15 @@ export default function Home() {
       return undefined;
     }
 
+    // Toggle (not one-shot): content fades in as it enters the viewport and
+    // fades back out as it leaves, so every scroll in either direction animates.
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('lp-is-visible');
-            io.unobserve(entry.target);
-          }
+          entry.target.classList.toggle('lp-is-visible', entry.isIntersecting);
         });
       },
-      { threshold: 0.15 }
+      { threshold: 0.1, rootMargin: '0px 0px -6% 0px' }
     );
     revealEls.forEach((el) => io.observe(el));
     return () => io.disconnect();
@@ -110,6 +109,10 @@ export default function Home() {
               alt="A unit of blood ready for transfusion in a hospital ward"
               loading="eager"
             />
+          </div>
+          <div className="lp-hero-ambient" aria-hidden="true">
+            <span className="lp-glow lp-glow-a" />
+            <span className="lp-glow lp-glow-b" />
           </div>
           <div className="lp-container">
             <div className="lp-hero-overlay-card lp-reveal lp-stagger">
@@ -252,8 +255,8 @@ export default function Home() {
         {/* HOW IT WORKS */}
         <section className="lp-section lp-how-it-works" id="how-it-works">
           <div className="lp-container">
-            <p className="lp-eyebrow lp-center">How it works</p>
-            <h2 className="lp-center">A request finds its way to the right person, step by step.</h2>
+            <p className="lp-eyebrow lp-center lp-reveal">How it works</p>
+            <h2 className="lp-center lp-reveal" style={{ '--delay': '80ms' }}>A request finds its way to the right person, step by step.</h2>
             <ol className="lp-timeline lp-reveal lp-stagger">
               <li className="lp-timeline-step">
                 <span className="lp-step-num">01</span>
@@ -372,8 +375,8 @@ export default function Home() {
         {/* MATCHING */}
         <section className="lp-section lp-matching">
           <div className="lp-container">
-            <p className="lp-eyebrow lp-center">Matching</p>
-            <h2 className="lp-center">
+            <p className="lp-eyebrow lp-center lp-reveal">Matching</p>
+            <h2 className="lp-center lp-reveal" style={{ '--delay': '80ms' }}>
               The right match isn&rsquo;t just the right blood type. It&rsquo;s the right donor, available at the
               right time.
             </h2>
@@ -407,8 +410,8 @@ export default function Home() {
         {/* SAFETY */}
         <section className="lp-section lp-safety" id="safety">
           <div className="lp-container">
-            <p className="lp-eyebrow">Safety &amp; trust</p>
-            <h2>Built to be accountable, not anonymous.</h2>
+            <p className="lp-eyebrow lp-reveal">Safety &amp; trust</p>
+            <h2 className="lp-reveal" style={{ '--delay': '80ms' }}>Built to be accountable, not anonymous.</h2>
             <div className="lp-safety-grid lp-reveal lp-stagger">
               <div className="lp-safety-item">
                 <h3>Identifiable accounts</h3>
