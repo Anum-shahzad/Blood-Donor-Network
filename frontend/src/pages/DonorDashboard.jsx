@@ -154,17 +154,18 @@ export default function DonorDashboard() {
   }
 
   async function toggleAvailability() {
-    if (!profile) return;
+    if (!profile || toggling) return;
+    const next = !profile.is_available;
+    // Flip instantly so the switch animates right away; roll back if the server says no.
+    setProfile((p) => ({ ...p, is_available: next }));
     setToggling(true);
     setError('');
     setSuccessMsg('');
     try {
-      const next = !profile.is_available;
       await apiPatch('/api/donors/me/availability', { is_available: next });
-      setProfile((p) => ({ ...p, is_available: next }));
-      setSuccessMsg(next ? 'Status updated: Available to Donate' : 'Status updated: Availability Paused');
       loadMatches();
     } catch (err) {
+      setProfile((p) => ({ ...p, is_available: !next }));
       setError(err.message);
     } finally {
       setToggling(false);
@@ -338,28 +339,32 @@ export default function DonorDashboard() {
       {/* Quick Status Bar */}
       <div className="quick-status-bar">
         <div className="quick-status-group">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={Boolean(profile?.is_available)}
-            aria-label="Available to donate"
-            onClick={toggleAvailability}
-            disabled={toggling || !hasProfile}
-            className={`toggle-switch${profile?.is_available ? ' is-on' : ''}`}
-          >
-            <span className="toggle-knob" />
-          </button>
-          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: profile?.is_available ? 'var(--success)' : 'var(--ink-muted)' }}>
-            {profile?.is_available ? 'Available to donate' : 'Not available'}
-          </span>
-        </div>
-
-        <div className="quick-status-group">
           <div className="quick-pill" style={{ borderLeft: '3px solid var(--primary)' }}>
             <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{profile?.blood_group || '—'}</span>
             {profile?.city && (
               <span style={{ color: 'var(--ink-muted)', fontSize: '0.75rem' }}>{profile.city}</span>
             )}
+          </div>
+        </div>
+
+        <div className="quick-status-group" style={{ gap: '1rem' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', fontWeight: 600 }}>
+            Available to donate
+          </span>
+          <div className={`toggle-wrap${profile?.is_available ? ' is-on' : ''}`}>
+            <span className="toggle-halo" aria-hidden="true" />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(profile?.is_available)}
+              aria-label="Available to donate"
+              onClick={toggleAvailability}
+              disabled={!hasProfile}
+              className="toggle-switch"
+            >
+              <span className="toggle-knob" />
+            </button>
+            <span className="toggle-label">{profile?.is_available ? 'ON' : 'OFF'}</span>
           </div>
         </div>
       </div>
