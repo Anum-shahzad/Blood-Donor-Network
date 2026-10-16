@@ -124,19 +124,56 @@ router.patch('/requests/:id/verify', async (req, res, next) => {
       return res.status(400).json({ error: 'verified must be true or false' });
     }
 
-    const [rows] = await pool.query('SELECT status FROM requests WHERE id = ?', [requestId]);
-    const existing = rows[0];
-    if (!existing) {
-      return res.status(404).json({ error: 'Request not found' });
+    // One transaction with a row lock, so this can't interleave with a donor
+    // accepting the same request (acceptRequest locks the same row).
+    const conn = await pool.getConnection();
+    let newStatus;
+    try {
+      await conn.beginTransaction();
+
+      const [rows] = await conn.query('SELECT status FROM requests WHERE id = ? FOR UPDATE', [requestId]);
+      const existing = rows[0];
+      if (!existing) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'Request not found' });
+      }
+
+      // Verification flag and lifecycle status must never disagree:
+      //   verify   : pending -> verified; open statuses are unchanged.
+      //   un-verify: verified/matched -> pending (back to the review queue),
+      //              so nothing "open" is left without verification.
+      // A request a donor has already accepted can't be silently flipped
+      // (that would strand the committed donor), and a closed request can't
+      // be verified back into circulation.
+      if (existing.status === 'donor_accepted') {
+        await conn.rollback();
+        return res.status(409).json({
+          error: 'A donor has already accepted this request — reject it instead of changing its verification',
+        });
+      }
+      if (verified && ['fulfilled', 'expired', 'cancelled'].includes(existing.status)) {
+        await conn.rollback();
+        return res.status(409).json({ error: `A ${existing.status} request cannot be verified` });
+      }
+
+      if (verified) {
+        newStatus = existing.status === 'pending' ? 'verified' : existing.status;
+      } else {
+        newStatus = ['verified', 'matched'].includes(existing.status) ? 'pending' : existing.status;
+      }
+
+      await conn.query('UPDATE requests SET is_verified = ?, status = ? WHERE id = ?', [
+        verified,
+        newStatus,
+        requestId,
+      ]);
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
     }
-
-    const newStatus = verified && existing.status === 'pending' ? 'verified' : existing.status;
-
-    await pool.query('UPDATE requests SET is_verified = ?, status = ? WHERE id = ?', [
-      verified,
-      newStatus,
-      requestId,
-    ]);
 
     res.json({ status: 'ok', is_verified: verified, request_status: newStatus });
   } catch (err) {

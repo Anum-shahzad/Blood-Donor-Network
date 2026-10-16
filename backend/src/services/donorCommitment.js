@@ -23,6 +23,7 @@ import {
 import { canDonorGiveToRecipient } from './matching/compatibility.js';
 import { isEligibleByRecency, DONATION_COOLDOWN_MONTHS } from './matching/donorMatching.js';
 import { upsertConversation } from './chatService.js';
+import { defaultTtlHours } from './requestLifecycle.js';
 import { validateDonationDate, daysBetween, DONATION_COOLDOWN_DAYS } from '../utils/validation.js';
 
 function httpError(status, message) {
@@ -56,8 +57,22 @@ export async function acceptRequest(donorId, requestId) {
       throw httpError(request ? 409 : 404, requestCheck.reason);
     }
 
-    if (request.required_by && new Date(request.required_by).getTime() < Date.now()) {
-      throw httpError(409, 'This request has passed its needed-by time');
+    // Verification is enforced here, on the server, under the request row
+    // lock: an admin-unverified (or never-verified) request cannot be
+    // accepted even if its status column still says verified/matched.
+    if (!request.is_verified) {
+      throw httpError(409, 'This request has not been verified by an admin and cannot be accepted');
+    }
+
+    // Same expiry rule the open-request list and the expiry sweep use:
+    // needed-by time, or created_at + the default TTL when none was set.
+    const expiresAt = request.required_by
+      ? new Date(request.required_by).getTime()
+      : new Date(request.created_at).getTime() + defaultTtlHours() * 60 * 60 * 1000;
+    if (expiresAt < Date.now()) {
+      throw httpError(409, request.required_by
+        ? 'This request has passed its needed-by time'
+        : 'This request has expired');
     }
 
     const donorCheck = canDonorAccept(donorProfile);
