@@ -44,6 +44,15 @@ async function request(method, path, body) {
         window.location.assign('/login?expired=1');
       }
     }
+    // The server re-checks the account on every request, so a suspension takes
+    // effect immediately. Drop the stale session and show the login page with
+    // the suspension notice. Login attempts (/api/auth/) just show the error.
+    if (res.status === 403 && data.code === 'ACCOUNT_SUSPENDED' && !path.startsWith('/api/auth/')) {
+      clearSession();
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login?suspended=1');
+      }
+    }
     throw new Error(data.error || `Request failed: ${res.status}`);
   }
   return data;

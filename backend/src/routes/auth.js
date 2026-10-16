@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { hashPassword, comparePassword, signToken } from '../services/authService.js';
 import { validateSignupPayload, isValidEmail, isValidPassword } from '../utils/validation.js';
+import { sendAccountSuspended } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -88,6 +89,13 @@ router.post('/login', async (req, res, next) => {
     // distinguishing them lets an attacker enumerate registered emails.
     if (!user || !(await comparePassword(password, user.password_hash))) {
       return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Checked only AFTER the password is verified, so the suspended status is
+    // never revealed to someone who merely knows an email address. Admins are
+    // exempt (see middleware/auth.js).
+    if (user.is_suspended && user.role !== 'admin') {
+      return sendAccountSuspended(res);
     }
 
     const token = signToken({ id: user.id, role: user.role, email: user.email });

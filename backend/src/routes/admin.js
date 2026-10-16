@@ -225,16 +225,31 @@ router.patch('/donors/:id/verify', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/donors/:id/status — suspend or reinstate donor account for compliance
+// PATCH /api/admin/donors/:id/status — suspend or reinstate an account for compliance.
+// Despite the path, this works on donor AND requester accounts (it targets
+// users.id). Admin accounts can never be suspended: otherwise the last admin
+// could lock everyone, including themselves, out of the moderation workflow.
+// The flag is enforced on every protected request by middleware/auth.js.
 router.patch('/donors/:id/status', async (req, res, next) => {
   try {
-    const donorUserId = Number(req.params.id);
+    const targetUserId = Number(req.params.id);
+    if (!Number.isInteger(targetUserId) || targetUserId < 1) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
     const { is_suspended } = req.body;
     if (typeof is_suspended !== 'boolean') {
       return res.status(400).json({ error: 'is_suspended must be true or false' });
     }
 
-    await pool.query('UPDATE users SET is_suspended = ? WHERE id = ?', [is_suspended, donorUserId]);
+    const [rows] = await pool.query('SELECT role FROM users WHERE id = ?', [targetUserId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (rows[0].role === 'admin') {
+      return res.status(403).json({ error: 'Administrator accounts cannot be suspended' });
+    }
+
+    await pool.query('UPDATE users SET is_suspended = ? WHERE id = ?', [is_suspended, targetUserId]);
     res.json({ status: 'ok', is_suspended });
   } catch (err) {
     next(err);

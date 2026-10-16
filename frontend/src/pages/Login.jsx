@@ -9,6 +9,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const sessionExpired = params.get('expired') === '1';
+  const accountSuspended = params.get('suspended') === '1';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -44,6 +45,9 @@ export default function Login() {
           <p className="auth-card-subtext">Log in to manage your donor status or blood requests.</p>
 
           <form onSubmit={handleSubmit}>
+            {accountSuspended && !error && (
+              <p className="error-banner">Your account has been suspended. Please contact the administrator.</p>
+            )}
             {sessionExpired && !error && (
               <p className="error-banner">Your session has expired. Please log in again.</p>
             )}

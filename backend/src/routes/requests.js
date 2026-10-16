@@ -191,7 +191,7 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
               dp.current_status, dp.committed_request_id
        FROM donor_profiles dp
        JOIN users u ON u.id = dp.user_id
-       WHERE dp.is_available = TRUE AND dp.blood_group IN (?)`,
+       WHERE dp.is_available = TRUE AND u.is_suspended = FALSE AND dp.blood_group IN (?)`,
       [compatibleGroups]
     );
 
@@ -241,6 +241,17 @@ router.post('/:id/alert/:donorId', authorize('requester'), async (req, res, next
     );
     if (reqRows.length === 0) {
       return res.status(404).json({ error: 'Request not found' });
+    }
+
+    // A suspended (or non-donor) account must not be alerted.
+    const [donorRows] = await pool.query(
+      `SELECT u.id FROM users u
+       JOIN donor_profiles dp ON dp.user_id = u.id
+       WHERE u.id = ? AND u.is_suspended = FALSE`,
+      [donorId]
+    );
+    if (donorRows.length === 0) {
+      return res.status(404).json({ error: 'Donor not available' });
     }
 
     await pool.query(
