@@ -261,10 +261,11 @@ export function XIcon({ size = 18 }) {
   );
 }
 
-export function ChevronLeftIcon({ size = 16 }) {
+export function PanelLeftIcon({ size = 20 }) {
   return (
     <svg {...base} width={size} height={size} viewBox="0 0 24 24">
-      <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.5 4.5v15" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }

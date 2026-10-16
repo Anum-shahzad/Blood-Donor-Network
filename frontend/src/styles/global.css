@@ -863,9 +863,10 @@ button, input, select {
   align-items: center;
   gap: 0.65rem;
   padding: 0 0.5rem;
-  margin-bottom: 2rem;
   text-decoration: none;
   color: #fff;
+  flex: 1;
+  min-width: 0;
 }
 
 .sidebar-brand-text {
@@ -1697,37 +1698,45 @@ button, input, select {
   .toggle-switch, .toggle-knob { transition-duration: 0.01s; }
 }
 
-/* Collapse / expand control (desktop only) */
+/* Sidebar header row: brand + open/close icon */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin-bottom: 2rem;
+}
+
 .sidebar-collapse-btn {
-  position: absolute;
-  top: 1.6rem;
-  right: -14px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--primary-dark);
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  z-index: 5;
   padding: 0;
-  transition: transform 0.25s ease, background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.sidebar-collapse-btn:hover { background: var(--paper); }
-.sidebar-collapse-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.sidebar.is-collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
+.sidebar-collapse-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.sidebar-collapse-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 @media (min-width: 901px) {
   .sidebar.is-collapsed {
-    width: 76px;
+    width: 64px;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
   }
+  .sidebar.is-collapsed .sidebar-header {
+    flex-direction: column;
+    gap: 0.9rem;
+  }
   .sidebar.is-collapsed .sidebar-brand {
+    flex: none;
     justify-content: center;
     padding: 0;
   }
@@ -1751,5 +1760,5 @@ button, input, select {
   .sidebar-collapse-btn { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-collapse-btn { transition: none; }
+  .sidebar { transition: none; }
 }

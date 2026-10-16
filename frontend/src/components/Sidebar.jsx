@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import BrandMark from './BrandMark.jsx';
-import { LogoutIcon, ChevronLeftIcon } from './icons.jsx';
+import { LogoutIcon, PanelLeftIcon } from './icons.jsx';
 
 const ROLE_LABELS = { donor: 'Donor', requester: 'Requester', admin: 'Admin' };
 
@@ -11,21 +11,22 @@ export default function Sidebar({ user, navItems, onLogout, open, onNavigate, br
 
   return (
     <aside className={`sidebar${open ? ' is-open' : ''}${collapsed ? ' is-collapsed' : ''}`}>
-      <button
-        type="button"
-        className="sidebar-collapse-btn"
-        onClick={onToggleCollapse}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-expanded={!collapsed}
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
-        <ChevronLeftIcon size={16} />
-      </button>
-
-      <Link to={brandTo} className="sidebar-brand" onClick={onNavigate}>
-        <BrandMark onDark size={32} />
-        <span className="sidebar-brand-text">Blood Donor Network</span>
-      </Link>
+      <div className="sidebar-header">
+        <Link to={brandTo} className="sidebar-brand" onClick={onNavigate}>
+          <BrandMark onDark size={32} />
+          <span className="sidebar-brand-text">Blood Donor Network</span>
+        </Link>
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={onToggleCollapse}
+          aria-label={collapsed ? 'Open sidebar' : 'Close sidebar'}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Open sidebar' : 'Close sidebar'}
+        >
+          <PanelLeftIcon size={20} />
+        </button>
+      </div>
 
       <nav className="sidebar-nav">
         {navItems.map((item) => {
