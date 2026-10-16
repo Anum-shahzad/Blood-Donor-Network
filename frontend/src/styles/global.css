@@ -854,6 +854,8 @@ button, input, select {
   position: sticky;
   top: 0;
   height: 100vh;
+  z-index: 10;
+  transition: width 0.25s ease;
 }
 
 .sidebar-brand {
@@ -895,6 +897,8 @@ button, input, select {
   cursor: pointer;
   width: 100%;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar-link:hover {
@@ -1691,4 +1695,61 @@ button, input, select {
 @media (prefers-reduced-motion: reduce) {
   .toggle-wrap.is-glowing .toggle-halo { animation: none; }
   .toggle-switch, .toggle-knob { transition-duration: 0.01s; }
+}
+
+/* Collapse / expand control (desktop only) */
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 1.6rem;
+  right: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--primary-dark);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+  padding: 0;
+  transition: transform 0.25s ease, background 0.15s ease;
+}
+.sidebar-collapse-btn:hover { background: var(--paper); }
+.sidebar-collapse-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.sidebar.is-collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
+
+@media (min-width: 901px) {
+  .sidebar.is-collapsed {
+    width: 76px;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  .sidebar.is-collapsed .sidebar-brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .sidebar.is-collapsed .sidebar-brand-text,
+  .sidebar.is-collapsed .sidebar-link-label,
+  .sidebar.is-collapsed .sidebar-user-info {
+    display: none;
+  }
+  .sidebar.is-collapsed .sidebar-link {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .sidebar.is-collapsed .sidebar-user {
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar-collapse-btn { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar-collapse-btn { transition: none; }
 }

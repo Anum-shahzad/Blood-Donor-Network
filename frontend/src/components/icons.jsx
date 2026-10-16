@@ -260,3 +260,11 @@ export function XIcon({ size = 18 }) {
     </svg>
   );
 }
+
+export function ChevronLeftIcon({ size = 16 }) {
+  return (
+    <svg {...base} width={size} height={size} viewBox="0 0 24 24">
+      <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

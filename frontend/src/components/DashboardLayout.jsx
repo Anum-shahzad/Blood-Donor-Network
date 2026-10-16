@@ -57,6 +57,25 @@ function navItemsFor(role) {
 
 export default function DashboardLayout({ user, onLogout, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('sidebar-collapsed', next ? '1' : '0');
+      } catch {
+        /* storage unavailable; the preference just won't persist */
+      }
+      return next;
+    });
+  }
   const navItems = navItemsFor(user?.role);
   const HOME_BY_ROLE = {
     donor: '/donor/dashboard?tab=tab-home',
@@ -91,6 +110,8 @@ export default function DashboardLayout({ user, onLogout, children }) {
         open={drawerOpen}
         onNavigate={() => setDrawerOpen(false)}
         brandTo={brandTo}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapsed}
       />
 
       <main className="dashboard-main">{children}</main>
