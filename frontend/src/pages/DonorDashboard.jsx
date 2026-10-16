@@ -620,30 +620,6 @@ export default function DonorDashboard() {
                       <HeartIcon size={14} />
                       {actingOn === m.id ? 'Accepting...' : 'I Can Donate'}
                     </button>
-
-                    {m.contact_phone && (
-                      <a
-                        href={`tel:${m.contact_phone}`}
-                        className="btn btn-secondary"
-                        style={{ padding: '0.55rem 0.85rem' }}
-                        title="Direct Phone Call"
-                      >
-                        <PhoneIcon size={14} />
-                      </a>
-                    )}
-
-                    {m.contact_phone && (
-                      <a
-                        href={`https://wa.me/${m.contact_phone.replace(/[^0-9]/g, '')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-secondary"
-                        style={{ padding: '0.55rem 0.85rem' }}
-                        title="WhatsApp Chat"
-                      >
-                        WA
-                      </a>
-                    )}
                   </div>
                 </div>
               ))}

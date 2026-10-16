@@ -54,14 +54,30 @@ router.get('/me', async (req, res, next) => {
 
     let committedRequest = null;
     if (donor.committed_request_id) {
+      // The request's contact_phone is the only contact detail the donor
+      // dashboard shows after acceptance. It is released only to the donor
+      // who actually accepted THIS request (an 'accepted' response row for
+      // the authenticated user) and only while the request is still in
+      // 'donor_accepted'. The requester's account phone and email are never
+      // sent to donors.
       const [reqRows] = await pool.query(
         `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
-                r.required_by, r.status, r.patient_case, r.contact_phone, r.attendant_name,
-                u.name AS requester_name, u.phone AS requester_phone, u.email AS requester_email
+                r.required_by, r.status, r.patient_case,
+                CASE
+                  WHEN r.status = 'donor_accepted'
+                   AND EXISTS (
+                     SELECT 1 FROM request_responses rr
+                     WHERE rr.request_id = r.id AND rr.donor_id = ? AND rr.status = 'accepted'
+                   )
+                  THEN r.contact_phone
+                  ELSE NULL
+                END AS contact_phone,
+                r.attendant_name,
+                u.name AS requester_name
          FROM requests r
          JOIN users u ON u.id = r.requester_id
          WHERE r.id = ?`,
-        [donor.committed_request_id]
+        [req.user.id, donor.committed_request_id]
       );
       committedRequest = reqRows[0] || null;
     }
@@ -99,8 +115,8 @@ router.get('/matches', async (req, res, next) => {
 
     const [rows] = await pool.query(
       `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
-              r.required_by, r.status, r.created_at, r.patient_case, r.contact_phone,
-              r.attendant_name, r.prescription_slip, u.name AS requester_name, u.phone AS requester_phone
+              r.required_by, r.status, r.created_at, r.patient_case,
+              r.attendant_name, r.prescription_slip, u.name AS requester_name
        FROM requests r
        JOIN users u ON u.id = r.requester_id
        WHERE r.is_verified = TRUE
