@@ -55,21 +55,43 @@ export function validateSignupPayload(body) {
   return errors;
 }
 
-// last_donation_date must be a real calendar date (YYYY-MM-DD) that is not in
+// A donation date must be a real calendar date (YYYY-MM-DD) that is not in
 // the future. Returns an error message, or null when valid.
-export function validateDonationDate(value) {
+//
+// "Not in the future" is judged against the latest calendar date that exists
+// anywhere on Earth right now (UTC+14). That keeps a donor in any time zone
+// from being rejected for logging "today" just after their local midnight,
+// while still refusing any date that has not started yet for anyone.
+// `label` only changes the field name used in the error message.
+export const DONATION_COOLDOWN_DAYS = 90;
+const MAX_UTC_OFFSET_MS = 14 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function validateDonationDate(value, label = 'last_donation_date') {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return 'last_donation_date must be a date in YYYY-MM-DD format';
+    return `${label} must be a date in YYYY-MM-DD format`;
   }
   const parsed = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
-    return 'last_donation_date is not a real date';
+    return `${label} is not a real date`;
   }
-  // One day of grace for time zones ahead of the server.
-  if (parsed.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
-    return 'last_donation_date cannot be in the future';
+  const latestAllowed = new Date(Date.now() + MAX_UTC_OFFSET_MS).toISOString().slice(0, 10);
+  if (value > latestAllowed) {
+    return `${label} cannot be in the future`;
+  }
+  // Nobody has donated blood before 1950 and still has a live donor account;
+  // this just stops absurd values reaching the date arithmetic.
+  if (value < '1950-01-01') {
+    return `${label} is too far in the past`;
   }
   return null;
+}
+
+// Whole days from date string a to date string b (both YYYY-MM-DD).
+export function daysBetween(a, b) {
+  return Math.round(
+    (new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()) / DAY_MS
+  );
 }
 
 export function validateRequestPayload(body) {

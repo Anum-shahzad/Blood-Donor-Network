@@ -158,27 +158,30 @@ router.get('/me/donations', async (req, res, next) => {
   }
 });
 
-// POST /api/donors/me/donations — log a new or past donation & activate 90-day cooldown
+// POST /api/donors/me/donations — log a donation & activate 90-day cooldown (all rules enforced in recordDonation)
 router.post('/me/donations', async (req, res, next) => {
   try {
-    const { donation_date, hospital_name, recipient_case, units, request_id } = req.body;
+    const { donation_date, hospital_name, recipient_case, units, request_id } = req.body || {};
     if (!donation_date) {
       return res.status(400).json({ error: 'donation_date is required' });
     }
-    const dateError = validateDonationDate(donation_date);
+    const dateError = validateDonationDate(donation_date, 'donation_date');
     if (dateError) {
       return res.status(400).json({ error: dateError });
     }
-    if (!hospital_name || !hospital_name.trim()) {
+    if (typeof hospital_name !== 'string' || !hospital_name.trim()) {
       return res.status(400).json({ error: 'hospital_name is required' });
     }
 
+    // request_id is only a consistency check — recordDonation uses the
+    // donor's own server-side commitment, never the id sent by the client,
+    // and re-validates everything (dates, duplicates, request state, units).
     const result = await recordDonation(req.user.id, {
       donation_date,
       hospital_name,
       recipient_case,
-      units: Number(units) || 1,
-      request_id: request_id ? Number(request_id) : null,
+      units,
+      request_id,
     });
 
     res.status(201).json({ status: 'ok', ...result });
@@ -255,7 +258,7 @@ router.patch('/me/settings', async (req, res, next) => {
 // PUT /api/donors/me — create or update the donor_profiles row
 router.put('/me', async (req, res, next) => {
   try {
-    const { blood_group, last_donation_date } = req.body;
+    const { blood_group, last_donation_date } = req.body || {};
 
     if (!BLOOD_GROUPS.includes(blood_group)) {
       return res.status(400).json({ error: `blood_group must be one of: ${BLOOD_GROUPS.join(', ')}` });
@@ -268,12 +271,30 @@ router.put('/me', async (req, res, next) => {
     }
 
     const [existingRows] = await pool.query(
-      'SELECT blood_group, current_status FROM donor_profiles WHERE user_id = ?',
+      'SELECT blood_group, current_status, last_donation_date FROM donor_profiles WHERE user_id = ?',
       [req.user.id]
     );
     const existing = existingRows[0];
     if (existing && existing.blood_group !== blood_group && existing.current_status !== 'AVAILABLE') {
       return res.status(409).json({ error: 'You cannot change your blood group while committed to an emergency' });
+    }
+
+    // The last-donation date drives the cooldown, so profile edits may never
+    // be used to shorten it. An omitted/empty date keeps the stored one (it
+    // is NOT cleared), and a supplied date can't be earlier than the latest
+    // date already on record (profile value or any logged donation).
+    let newestKnown = existing?.last_donation_date ? String(existing.last_donation_date).slice(0, 10) : null;
+    const [latestRows] = await pool.query(
+      'SELECT MAX(donation_date) AS latest FROM donations WHERE donor_id = ?',
+      [req.user.id]
+    );
+    const latestLogged = latestRows[0]?.latest ? String(latestRows[0].latest).slice(0, 10) : null;
+    if (latestLogged && (!newestKnown || latestLogged > newestKnown)) newestKnown = latestLogged;
+
+    if (last_donation_date && newestKnown && last_donation_date < newestKnown) {
+      return res.status(409).json({
+        error: `Your last donation date cannot be set earlier than ${newestKnown}, which is already on record.`,
+      });
     }
 
     await pool.query(
@@ -282,7 +303,11 @@ router.put('/me', async (req, res, next) => {
        ON DUPLICATE KEY UPDATE
          is_blood_group_verified = IF(blood_group <> VALUES(blood_group), FALSE, is_blood_group_verified),
          blood_group = VALUES(blood_group),
-         last_donation_date = VALUES(last_donation_date)`,
+         last_donation_date = CASE
+           WHEN VALUES(last_donation_date) IS NULL THEN last_donation_date
+           WHEN last_donation_date IS NULL THEN VALUES(last_donation_date)
+           ELSE GREATEST(last_donation_date, VALUES(last_donation_date))
+         END`,
       [req.user.id, blood_group, last_donation_date || null]
     );
 
