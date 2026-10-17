@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { BLOOD_GROUPS, validateDonationDate } from '../utils/validation.js';
 import { EFFECTIVE_EXPIRY_SQL, defaultTtlHours } from '../services/requestLifecycle.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
+import { isEligibleByRecency } from '../services/matching/donorMatching.js';
 import { computeCooldownInfo } from '../services/matching/donorState.js';
 import { cancelCommitment, advanceCommitmentStep, recordDonation } from '../services/donorCommitment.js';
 
@@ -98,7 +99,7 @@ router.get('/me', async (req, res, next) => {
 router.get('/matches', async (req, res, next) => {
   try {
     const [donorRows] = await pool.query(
-      'SELECT blood_group, current_status, is_available FROM donor_profiles WHERE user_id = ?',
+      'SELECT blood_group, current_status, is_available, last_donation_date FROM donor_profiles WHERE user_id = ?',
       [req.user.id]
     );
     const donorProfile = donorRows[0];
@@ -113,6 +114,9 @@ router.get('/matches', async (req, res, next) => {
       return res.json({ matches: [], reason: 'You have marked yourself unavailable — turn availability on to see requests' });
     }
 
+    // A request is hidden only once this donor has ANSWERED it (declined /
+    // accepted). A 'notified' row means a requester alerted this donor, which
+    // must surface the request, not hide it (audit L-03).
     const [rows] = await pool.query(
       `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
               r.required_by, r.status, r.created_at, r.patient_case,
@@ -125,6 +129,7 @@ router.get('/matches', async (req, res, next) => {
          AND NOT EXISTS (
            SELECT 1 FROM request_responses rr
            WHERE rr.request_id = r.id AND rr.donor_id = ?
+             AND rr.status IN ('declined', 'accepted')
          )
        ORDER BY
          FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
@@ -132,9 +137,12 @@ router.get('/matches', async (req, res, next) => {
       [defaultTtlHours(), req.user.id]
     );
 
-    const matches = rows.filter((r) =>
-      getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group)
-    );
+    // Same eligibility acceptRequest() and the alert rules enforce: compatible
+    // blood group and outside the post-donation cooldown, so the list never
+    // shows a request the donor would be refused on accept.
+    const matches = isEligibleByRecency(donorProfile.last_donation_date)
+      ? rows.filter((r) => getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group))
+      : [];
 
     res.json({ matches, match_count: matches.length });
   } catch (err) {
