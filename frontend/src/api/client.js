@@ -12,25 +12,32 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request(method, path, body) {
+// body may be a plain object (sent as JSON) or a FormData (multipart upload;
+// the browser sets the Content-Type with its boundary). { blob: true } returns
+// the response as a Blob, used for private documents that need the bearer token.
+async function request(method, path, body, { blob = false } = {}) {
   if (!BASE_URL) {
     throw new Error('The app is not connected to a server (VITE_API_URL is not set).');
   }
+
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
 
   let res;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers: {
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         ...authHeaders(),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
     // fetch only rejects when the request never got an answer at all.
     throw new Error("Can't reach the server. Check your connection and try again.");
   }
+
+  if (blob && res.ok) return res.blob();
 
   const data = await res.json().catch(() => ({}));
 
@@ -62,3 +69,5 @@ export const apiGet = (path) => request('GET', path);
 export const apiPost = (path, body = {}) => request('POST', path, body);
 export const apiPut = (path, body = {}) => request('PUT', path, body);
 export const apiPatch = (path, body = {}) => request('PATCH', path, body);
+export const apiUpload = (path, formData) => request('POST', path, formData);
+export const apiGetBlob = (path) => request('GET', path, undefined, { blob: true });

@@ -27,6 +27,7 @@ function navItemsFor(role) {
       { to: '/donor/dashboard?tab=tab-cooldown', label: 'Cooldown & History', icon: ClockIcon },
       { to: '/donor/dashboard?tab=tab-commitments', label: 'My Commitments', icon: HeartIcon },
       { to: '/donor/dashboard?tab=tab-card', label: 'Identity Card', icon: IdCardIcon },
+      { to: '/donor/dashboard?tab=tab-verification', label: 'Verification', icon: ShieldCheckIcon },
       { to: '/donor/dashboard?tab=tab-settings', label: 'Settings', icon: SlidersIcon },
     ];
   }
@@ -46,6 +47,7 @@ function navItemsFor(role) {
       { to: '/admin/dashboard?tab=tab-home', label: 'Home', icon: HomeIcon, isDefault: true },
       { to: '/admin/dashboard?tab=tab-analytics', label: 'Network Analytics', icon: GaugeIcon },
       { to: '/admin/dashboard?tab=tab-verifications', label: 'Verification Queue', icon: ShieldCheckIcon },
+      { to: '/admin/dashboard?tab=tab-id-review', label: 'ID & Evidence Review', icon: IdCardIcon },
       { to: '/admin/dashboard?tab=tab-donors', label: 'Donor Registry', icon: UsersIcon },
       { to: '/admin/dashboard?tab=tab-fraud', label: 'Abuse & Fraud', icon: AlertCircleIcon },
       { to: '/admin/dashboard?tab=tab-settings', label: 'Settings', icon: SlidersIcon },

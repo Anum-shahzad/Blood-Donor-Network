@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
 import {
   GaugeIcon,
   ShieldCheckIcon,
@@ -683,6 +684,11 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ================================================================= */}
+      {/* ID & DONATION EVIDENCE REVIEW                                    */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-id-review' && <AdminVerificationPanel />}
 
       {/* ================================================================= */}
       {/* TAB 5: SYSTEM POLICIES & SETTINGS                                */}

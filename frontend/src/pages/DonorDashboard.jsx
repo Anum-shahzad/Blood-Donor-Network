@@ -4,6 +4,7 @@ import { apiGet, apiPatch, apiPost, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import VerificationPanel from '../components/VerificationPanel.jsx';
 import {
   DropletIcon,
   MapPinIcon,
@@ -1047,6 +1048,11 @@ export default function DonorDashboard() {
           </div>
         </div>
       )}
+
+      {/* ================================================================= */}
+      {/* VERIFICATION: OPTIONAL IDENTITY + DONATION EVIDENCE              */}
+      {/* ================================================================= */}
+      {activeTab === 'tab-verification' && <VerificationPanel />}
 
       {/* ================================================================= */}
       {/* TAB 5: DONOR SETTINGS                                            */}

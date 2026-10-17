@@ -9,6 +9,8 @@ import requestsRouter from './routes/requests.js';
 import adminRouter from './routes/admin.js';
 import conversationsRouter from './routes/conversations.js';
 import publicRouter from './routes/public.js';
+import verificationRouter from './routes/verification.js';
+import adminVerificationRouter from './routes/adminVerification.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { expireOverdueRequests } from './services/requestLifecycle.js';
 import { releaseExpiredCooldowns } from './services/donorCommitment.js';
@@ -85,7 +87,10 @@ app.use('/api/health', healthRouter);
 app.use('/api/public', publicRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/donors', donorsRouter);
+app.use('/api/verification', verificationRouter);
 app.use('/api/requests', requestsRouter);
+// Mounted before /api/admin so the more specific path is matched first.
+app.use('/api/admin/verification', adminVerificationRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/conversations', conversationsRouter);
 
