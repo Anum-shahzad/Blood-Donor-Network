@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { BLOOD_GROUPS } from '../utils/validation.js';
+import { rejectRequestByAdmin } from '../services/requestLifecycle.js';
 
 const router = Router();
 
@@ -181,7 +182,10 @@ router.patch('/requests/:id/verify', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/requests/:id/reject — reject / cancel a fraudulent or invalid request
+// PATCH /api/admin/requests/:id/reject — reject / cancel a fraudulent or invalid request.
+// Runs in one transaction that also releases any donor committed to the
+// request. A fulfilled or expired request can't be rejected (409); rejecting an
+// already-cancelled request is a safe no-op.
 router.patch('/requests/:id/reject', async (req, res, next) => {
   try {
     const requestId = Number(req.params.id);
@@ -189,16 +193,12 @@ router.patch('/requests/:id/reject', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid request id' });
     }
 
-    const [result] = await pool.query(
-      `UPDATE requests SET status = 'cancelled', is_verified = FALSE WHERE id = ?`,
-      [requestId]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Request not found' });
-    }
-
-    res.json({ status: 'ok', message: 'Request rejected and cancelled' });
+    const result = await rejectRequestByAdmin(requestId);
+    res.json({
+      status: 'ok',
+      message: result.already_closed ? 'Request was already cancelled' : 'Request rejected and cancelled',
+      ...result,
+    });
   } catch (err) {
     next(err);
   }

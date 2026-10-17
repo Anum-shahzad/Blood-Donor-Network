@@ -186,6 +186,19 @@ export async function cancelCommitment(donorId) {
   try {
     await conn.beginTransaction();
 
+    // Lock the request row BEFORE the donor row (same order as acceptRequest,
+    // recordDonation and the request-closing routine), so this can't deadlock
+    // with a requester/admin closing the same request. The commitment is
+    // re-verified once both locks are held.
+    const [peekRows] = await conn.query(
+      'SELECT committed_request_id FROM donor_profiles WHERE user_id = ?',
+      [donorId]
+    );
+    const peekedRequestId = peekRows[0]?.committed_request_id || null;
+    if (peekedRequestId) {
+      await conn.query('SELECT id FROM requests WHERE id = ? FOR UPDATE', [peekedRequestId]);
+    }
+
     const [donorRows] = await conn.query(
       'SELECT * FROM donor_profiles WHERE user_id = ? FOR UPDATE',
       [donorId]
@@ -195,6 +208,9 @@ export async function cancelCommitment(donorId) {
     const cancelCheck = canDonorCancelCommitment(donorProfile);
     if (!cancelCheck.ok) {
       throw httpError(donorProfile ? 409 : 404, cancelCheck.reason);
+    }
+    if ((donorProfile.committed_request_id || null) !== peekedRequestId) {
+      throw httpError(409, 'Your commitment changed while saving — please refresh and try again');
     }
 
     const requestId = donorProfile.committed_request_id;
