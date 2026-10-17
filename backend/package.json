@@ -11,7 +11,8 @@
     "test:donor-state": "node src/services/matching/donorState.selfcheck.js",
     "test:auth": "node src/services/authService.selfcheck.js",
     "test:chat": "node src/services/chatRules.selfcheck.js",
-    "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth && npm run test:chat"
+    "test:alerts": "node src/services/alertRules.selfcheck.js",
+    "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth && npm run test:chat && npm run test:alerts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

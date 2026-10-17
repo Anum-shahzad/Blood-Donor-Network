@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validateRequestPayload, MANUAL_REQUEST_STATUSES } from '../utils/validation.js';
-import { closeRequestByRequester } from '../services/requestLifecycle.js';
+import { closeRequestByRequester, defaultTtlHours } from '../services/requestLifecycle.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 import { acceptRequest, declineRequest } from '../services/donorCommitment.js';
+import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
 
 const router = Router();
 
@@ -227,46 +228,86 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
 });
 
 // POST /api/requests/:id/alert/:donorId — dispatch emergency alert to compatible donor
+//
+// Server-side rules (all in services/alertRules.js): the request must be the
+// caller's own, verified, open and unexpired; the target must be an active,
+// available, non-suspended DONOR whose blood group is compatible and who is
+// outside the post-donation cooldown; and an alert never overwrites a donor's
+// earlier response (declined/accepted) or repeats an existing alert.
+//
+// Runs in one transaction and locks the request, then the donor profile — the
+// same order acceptRequest() uses — so an alert cannot slip in between a donor
+// accepting and the request closing.
 router.post('/:id/alert/:donorId', authorize('requester'), async (req, res, next) => {
-  try {
-    const requestId = Number(req.params.id);
-    const donorId = Number(req.params.donorId);
-    if (!Number.isInteger(requestId) || !Number.isInteger(donorId)) {
-      return res.status(400).json({ error: 'Invalid parameters' });
-    }
+  const requestId = parseIdParam(req.params.id);
+  const donorId = parseIdParam(req.params.donorId);
+  if (requestId === null || donorId === null) {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
 
-    const [reqRows] = await pool.query(
-      'SELECT id, hospital_name, blood_group FROM requests WHERE id = ? AND requester_id = ?',
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [reqRows] = await conn.query(
+      `SELECT id, hospital_name, blood_group, status, is_verified, required_by, created_at
+         FROM requests WHERE id = ? AND requester_id = ? FOR UPDATE`,
       [requestId, req.user.id]
     );
-    if (reqRows.length === 0) {
-      return res.status(404).json({ error: 'Request not found' });
-    }
-
-    // A suspended (or non-donor) account must not be alerted.
-    const [donorRows] = await pool.query(
-      `SELECT u.id FROM users u
-       JOIN donor_profiles dp ON dp.user_id = u.id
-       WHERE u.id = ? AND u.is_suspended = FALSE`,
+    const [profileRows] = await conn.query(
+      `SELECT blood_group, is_available, current_status, last_donation_date
+         FROM donor_profiles WHERE user_id = ? FOR UPDATE`,
       [donorId]
     );
-    if (donorRows.length === 0) {
-      return res.status(404).json({ error: 'Donor not available' });
-    }
-
-    await pool.query(
-      `INSERT INTO request_responses (request_id, donor_id, status, responded_at)
-       VALUES (?, ?, 'notified', NOW())
-       ON DUPLICATE KEY UPDATE status = IF(status = 'accepted', status, 'notified'), responded_at = NOW()`,
+    const [accountRows] = await conn.query(
+      'SELECT id, role, is_suspended FROM users WHERE id = ?',
+      [donorId]
+    );
+    const [responseRows] = await conn.query(
+      'SELECT status FROM request_responses WHERE request_id = ? AND donor_id = ? FOR UPDATE',
       [requestId, donorId]
     );
+
+    const verdict = evaluateAlert({
+      request: reqRows[0],
+      donorAccount: accountRows[0],
+      donorProfile: profileRows[0],
+      existingResponse: responseRows[0],
+      ttlHours: defaultTtlHours(),
+    });
+    if (!verdict.ok) {
+      const err = new Error(verdict.message);
+      err.status = verdict.status;
+      throw err;
+    }
+
+    // Plain INSERT (not an upsert): the checks above guarantee no response row
+    // exists, and the unique key makes a concurrent duplicate fail instead of
+    // overwriting someone's answer.
+    await conn.query(
+      `INSERT INTO request_responses (request_id, donor_id, status, responded_at)
+       VALUES (?, ?, 'notified', NOW())`,
+      [requestId, donorId]
+    );
+
+    await conn.commit();
 
     res.json({
       status: 'ok',
       message: `Emergency alert dispatched to donor for ${reqRows[0].blood_group} blood at ${reqRows[0].hospital_name}.`,
     });
   } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch { /* connection already gone */ }
+    }
+    if (err && err.code === 'ER_DUP_ENTRY') {
+      err.status = 409;
+      err.message = 'This donor has already been alerted for this request';
+    }
     next(err);
+  } finally {
+    if (conn) conn.release();
   }
 });
 
