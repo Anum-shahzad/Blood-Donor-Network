@@ -153,3 +153,13 @@ export function computeCooldownInfo(lastDonationDate, cooldownDays = 90) {
     cooldownUntil,
   };
 }
+
+// The newest last_donation_date (YYYY-MM-DD, UTC) whose cooldown has already
+// elapsed at `now`: a donation on or before this date is out of cooldown.
+// It is the exact same boundary computeCooldownInfo() and isEligibleByRecency()
+// use (a donation date counts from 00:00 UTC, and the cooldown ends once the
+// full number of days has passed), expressed as a date so the expiry sweep can
+// put it straight into a SQL comparison on the DATE column.
+export function cooldownCutoffDate(now = Date.now(), cooldownDays = 90) {
+  return new Date(now - cooldownDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+}

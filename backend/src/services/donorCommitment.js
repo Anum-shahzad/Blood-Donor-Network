@@ -17,6 +17,7 @@ import {
   canDonorCancelCommitment,
   canDonorAdvanceJourney,
   computeCooldownInfo,
+  cooldownCutoffDate,
   requestStatusAfterAccept,
   requestStatusAfterCommitmentCancelled,
 } from './matching/donorState.js';
@@ -485,4 +486,45 @@ export async function recordDonation(donorId, { donation_date, hospital_name, re
   } finally {
     conn.release();
   }
+}
+
+// Returns donors to AVAILABLE once their post-donation cooldown has elapsed.
+//
+// recordDonation() is the only thing that puts a donor into COOLDOWN (and it
+// also switches is_available off), and every eligibility gate trusts that
+// stored state, so without this the state outlives the date and the donor stays
+// locked out until they log another donation. The expiry sweep calls this.
+//
+// One UPDATE, so it is atomic, idempotent and safe if several serverless
+// instances run it at once (the second finds nothing left to change). A donor is
+// only released when ALL of these hold, so no other restriction is overridden:
+//   - current_status is COOLDOWN (every other state, including an active
+//     commitment or DONATION_COMPLETED, is left exactly as it is);
+//   - they hold no commitment (committed_request_id IS NULL);
+//   - last_donation_date is known and the cooldown has really elapsed (a missing
+//     date is never treated as "expired");
+//   - the account is a donor and is not suspended (suspension lives on users).
+// is_available is switched back on because recordDonation switched it off for
+// the cooldown. Blood-group verification is not read or changed.
+//
+// Plain-SQL comparisons only (no date functions, no array params): the cutoff is
+// computed in JS from the same rule computeCooldownInfo() uses, so the DATE
+// comparison behaves identically on MySQL and TiDB regardless of session time zone.
+export async function releaseExpiredCooldowns(now = Date.now()) {
+  const [result] = await pool.query(
+    `UPDATE donor_profiles
+        SET current_status = 'AVAILABLE',
+            is_available = TRUE,
+            status_changed_at = NOW()
+      WHERE current_status = 'COOLDOWN'
+        AND committed_request_id IS NULL
+        AND last_donation_date IS NOT NULL
+        AND last_donation_date <= ?
+        AND user_id IN (
+          SELECT id FROM users
+           WHERE role = 'donor' AND COALESCE(is_suspended, FALSE) = FALSE
+        )`,
+    [cooldownCutoffDate(now, DONATION_COOLDOWN_DAYS)]
+  );
+  return result.affectedRows;
 }

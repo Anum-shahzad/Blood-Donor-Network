@@ -11,6 +11,7 @@ import conversationsRouter from './routes/conversations.js';
 import publicRouter from './routes/public.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { expireOverdueRequests } from './services/requestLifecycle.js';
+import { releaseExpiredCooldowns } from './services/donorCommitment.js';
 
 dotenv.config();
 
@@ -49,6 +50,25 @@ async function sweepExpiredRequests() {
   }
 }
 
+// Return donors to AVAILABLE once their post-donation cooldown has elapsed
+// (see releaseExpiredCooldowns). Same contract as the sweep above: idempotent,
+// so running it on several instances is harmless.
+async function sweepExpiredCooldowns() {
+  try {
+    const n = await releaseExpiredCooldowns();
+    if (n > 0) console.log(`Released ${n} donor(s) from expired cooldown`);
+  } catch (err) {
+    console.error('Cooldown release sweep failed:', err.message);
+  }
+}
+
+// Every periodic sweep. Each one handles its own errors, so one failing never
+// blocks the other. They run in parallel so the extra work costs no more than
+// one database round trip of added latency.
+function runSweeps() {
+  return Promise.all([sweepExpiredRequests(), sweepExpiredCooldowns()]);
+}
+
 if (isServerless) {
   // No background timer in serverless, so run the sweep on incoming traffic,
   // at most once a minute per function instance.
@@ -57,7 +77,7 @@ if (isServerless) {
     const now = Date.now();
     if (now - lastSweep < 60 * 1000) return next();
     lastSweep = now;
-    sweepExpiredRequests().finally(next);
+    runSweeps().finally(next);
   });
 }
 
@@ -83,8 +103,8 @@ if (!isServerless) {
     console.log(`Server listening on port ${PORT}`);
   });
 
-  sweepExpiredRequests();
-  setInterval(sweepExpiredRequests, 60 * 1000).unref();
+  runSweeps();
+  setInterval(runSweeps, 60 * 1000).unref();
 }
 
 export default app;
