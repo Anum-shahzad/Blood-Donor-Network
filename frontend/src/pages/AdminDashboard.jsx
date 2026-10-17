@@ -4,6 +4,7 @@ import { apiGet, apiPatch, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
+import AdminRequestEvidence from '../components/AdminRequestEvidence.jsx';
 import {
   GaugeIcon,
   ShieldCheckIcon,
@@ -29,6 +30,8 @@ export default function AdminDashboard() {
 
   const [analytics, setAnalytics] = useState(null);
   const [requests, setRequests] = useState([]);
+  // Optional request evidence, keyed by request id (latest submission each).
+  const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
   const [policies, setPolicies] = useState({
@@ -59,6 +62,7 @@ export default function AdminDashboard() {
   function loadAll() {
     loadAnalytics();
     loadRequests();
+    loadEvidence();
     loadDonors();
     loadFraudReports();
     loadPolicies();
@@ -74,6 +78,18 @@ export default function AdminDashboard() {
     apiGet('/api/admin/requests')
       .then(setRequests)
       .catch((err) => setError(err.message));
+  }
+
+  function loadEvidence() {
+    apiGet('/api/admin/request-evidence')
+      .then((data) => {
+        const map = {};
+        (data?.evidence || []).forEach((e) => {
+          map[e.request_id] = e;
+        });
+        setEvidenceByRequest(map);
+      })
+      .catch(() => {});
   }
 
   function loadDonors() {
@@ -203,6 +219,13 @@ export default function AdminDashboard() {
   const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const pendingRequestsCount = requests.filter((r) => !r.is_verified).length;
   const pendingDonorsCount = donors.filter((d) => !d.is_blood_group_verified).length;
+  // Evidence waiting for a decision on a request that is still live; evidence
+  // on a closed request can no longer be reviewed, so it is not counted.
+  const pendingEvidenceCount = requests.filter(
+    (r) =>
+      ['pending', 'verified', 'matched', 'donor_accepted'].includes(r.status) &&
+      evidenceByRequest[r.id]?.status === 'pending'
+  ).length;
 
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
@@ -250,11 +273,12 @@ export default function AdminDashboard() {
             <div className="stack" style={{ gap: '0.6rem' }}>
               {[
                 { label: 'Requests awaiting verification', count: pendingRequestsCount, tab: 'tab-verifications' },
+                { label: 'Request evidence awaiting review', count: pendingEvidenceCount, tab: 'tab-verifications' },
                 { label: 'Donors awaiting blood group verification', count: pendingDonorsCount, tab: 'tab-donors' },
                 { label: 'Rate-limit flags to review', count: fraudData?.rate_limit_flags?.length || 0, tab: 'tab-fraud' },
               ].map((item) => (
                 <div
-                  key={item.tab}
+                  key={item.label}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.85rem', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.7rem 0.9rem' }}
                 >
                   <span style={{ fontSize: '0.92rem' }}>
@@ -467,6 +491,21 @@ export default function AdminDashboard() {
                     <span>{r.urgency.toUpperCase()} &bull; {humanizeStatus(r.status)}</span>
                   </div>
                 </div>
+
+                <AdminRequestEvidence
+                  request={r}
+                  evidence={evidenceByRequest[r.id]}
+                  onDone={(message) => {
+                    setError('');
+                    setSuccessMsg(message);
+                    loadEvidence();
+                  }}
+                  onError={(message) => {
+                    setSuccessMsg('');
+                    setError(message);
+                    loadEvidence();
+                  }}
+                />
 
                 <div className="record-actions">
                   <button

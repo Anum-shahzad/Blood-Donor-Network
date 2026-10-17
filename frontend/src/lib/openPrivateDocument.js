@@ -6,10 +6,19 @@ import { apiGetBlob } from '../api/client.js';
 //
 // The tab is opened first, synchronously, so the browser's popup blocker
 // treats it as part of the click; it is closed again if the fetch fails.
-export async function openPrivateDocument(key) {
+//
+// `scope` picks which private store the key belongs to: identity / donation
+// documents (default) or request evidence.
+const DOCUMENT_PATHS = {
+  verification: '/api/verification/documents/',
+  'request-evidence': '/api/request-evidence/documents/',
+};
+
+export async function openPrivateDocument(key, scope = 'verification') {
   const tab = window.open('', '_blank');
   try {
-    const blob = await apiGetBlob(`/api/verification/documents/${encodeURIComponent(key)}`);
+    const base = DOCUMENT_PATHS[scope] || DOCUMENT_PATHS.verification;
+    const blob = await apiGetBlob(`${base}${encodeURIComponent(key)}`);
     const url = URL.createObjectURL(blob);
     if (tab) {
       tab.location.href = url;

@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { apiGet, apiPost, apiPatch } from '../api/client.js';
+import { apiGet, apiPost, apiPatch, apiUpload } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import RequestEvidencePanel, { checkEvidenceFiles, DEFAULT_EVIDENCE_LIMITS } from '../components/RequestEvidencePanel.jsx';
 import {
   DropletIcon,
   MapPinIcon,
@@ -72,14 +73,22 @@ export default function RequesterDashboard() {
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [openChats, setOpenChats] = useState({});
+  // Optional hospital evidence: latest status per request, and the file chosen
+  // on the "post request" form (uploaded right after the request is created).
+  const [evidenceByRequest, setEvidenceByRequest] = useState({});
+  const [evidenceLimits, setEvidenceLimits] = useState(null);
+  const [newEvidenceFiles, setNewEvidenceFiles] = useState([]);
+  const [newEvidenceKey, setNewEvidenceKey] = useState(0);
 
   useEffect(() => {
     loadRequests();
     loadArchive();
+    loadEvidence();
     const t = setInterval(() => {
       if (!document.hidden) {
         loadRequests();
         loadArchive();
+        loadEvidence();
       }
     }, REFRESH_MS);
     return () => clearInterval(t);
@@ -106,6 +115,25 @@ export default function RequesterDashboard() {
         }
       })
       .catch((err) => setError(err.message));
+  }
+
+  function loadEvidence() {
+    apiGet('/api/request-evidence/mine')
+      .then((data) => {
+        const map = {};
+        (data?.evidence || []).forEach((e) => {
+          map[e.request_id] = e;
+        });
+        setEvidenceByRequest(map);
+        if (data?.limits) setEvidenceLimits(data.limits);
+      })
+      .catch(() => {});
+  }
+
+  function handleEvidenceChanged(message) {
+    setError('');
+    setSuccessMsg(message);
+    loadEvidence();
   }
 
   function loadArchive() {
@@ -165,6 +193,15 @@ export default function RequesterDashboard() {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+
+    // Evidence is optional, but a file that is clearly unusable is caught here
+    // so the person can fix it (or clear it) before anything is posted.
+    const fileProblem = checkEvidenceFiles(newEvidenceFiles, evidenceLimits || DEFAULT_EVIDENCE_LIMITS);
+    if (fileProblem) {
+      setError(`${fileProblem} Remove the file to post without evidence, or choose a different one.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await apiPost('/api/requests', {
@@ -173,9 +210,26 @@ export default function RequesterDashboard() {
         required_by: localInputToIso(form.required_by),
       });
       setForm(emptyForm);
-      setSuccessMsg(`Emergency request #${res.id} created successfully! Admin verification queue has been notified.`);
+
+      // The request now exists. A failed evidence upload never undoes it.
+      let evidenceWarning = '';
+      if (newEvidenceFiles.length > 0) {
+        try {
+          const body = new FormData();
+          newEvidenceFiles.forEach((f) => body.append('documents', f));
+          await apiUpload(`/api/request-evidence/${res.id}`, body);
+        } catch (uploadErr) {
+          evidenceWarning = ` Your evidence could not be uploaded (${uploadErr.message}). You can add it from Active Requests.`;
+        }
+      }
+      setNewEvidenceFiles([]);
+      setNewEvidenceKey((k) => k + 1);
+
       loadRequests();
+      loadEvidence();
+      // setTab clears the banners, so the message is set after it.
       setTab('tab-active');
+      setSuccessMsg(`Emergency request #${res.id} created successfully! Admin verification queue has been notified.${evidenceWarning}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -385,6 +439,13 @@ export default function RequesterDashboard() {
                     </p>
                   )}
 
+                  <RequestEvidencePanel
+                    requestId={r.id}
+                    evidence={evidenceByRequest[r.id]}
+                    limits={evidenceLimits}
+                    onChanged={handleEvidenceChanged}
+                  />
+
                   <div className="record-actions">
                     <button
                       onClick={() => {
@@ -573,6 +634,21 @@ export default function RequesterDashboard() {
                   value={form.prescription_slip}
                   onChange={update('prescription_slip')}
                 />
+              </label>
+
+              <label className="field">
+                Hospital Document / Evidence (Optional)
+                <input
+                  key={`new-evidence-${newEvidenceKey}`}
+                  type="file"
+                  multiple
+                  accept={(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).allowed_types.join(',')}
+                  onChange={(e) => setNewEvidenceFiles(Array.from(e.target.files || []))}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', fontWeight: 400 }}>
+                  Not required &mdash; you can post without it. Up to {(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).max_files} files
+                  (JPEG, PNG, WebP or PDF, 5 MB each). Only you and the admin can open them.
+                </span>
               </label>
 
               <button type="submit" disabled={submitting} className="btn btn-primary btn-block" style={{ marginTop: '0.75rem' }}>

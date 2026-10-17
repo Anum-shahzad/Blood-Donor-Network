@@ -1,4 +1,5 @@
-// Receives multipart uploads for verification documents.
+// Receives multipart uploads for private documents (identity / donation
+// verification in Phase 1, request evidence in Phase 2).
 //
 // Files are held in memory only long enough to be validated (signature check)
 // and written to private storage. Nothing is ever written to the local disk,
@@ -8,19 +9,9 @@
 // bodies parsed.
 import multer from 'multer';
 import { MAX_FILE_BYTES, MAX_FILES_PER_SUBMISSION } from '../services/verification/verificationRules.js';
+import { MAX_EVIDENCE_FILES } from '../services/requestEvidence/requestEvidenceRules.js';
 
 export const DOCUMENT_FIELD = 'documents';
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_FILE_BYTES,
-    files: MAX_FILES_PER_SUBMISSION,
-    fields: 6,
-    fieldSize: 2 * 1024,
-    parts: MAX_FILES_PER_SUBMISSION + 6,
-  },
-}).array(DOCUMENT_FIELD, MAX_FILES_PER_SUBMISSION);
 
 function uploadError(status, message) {
   const err = new Error(message);
@@ -28,20 +19,41 @@ function uploadError(status, message) {
   return err;
 }
 
-export function receiveDocuments(req, res, next) {
-  upload(req, res, (err) => {
-    if (!err) return next();
+// One multer instance per file-count ceiling. Every limit except the file
+// count (5 MB per file, small text fields, in-memory storage) is shared.
+function buildReceiver(maxFiles) {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: MAX_FILE_BYTES,
+      files: maxFiles,
+      fields: 6,
+      fieldSize: 2 * 1024,
+      parts: maxFiles + 6,
+    },
+  }).array(DOCUMENT_FIELD, maxFiles);
 
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return next(uploadError(413, 'Each file must be 5 MB or smaller'));
+  return function receive(req, res, next) {
+    upload(req, res, (err) => {
+      if (!err) return next();
+
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return next(uploadError(413, 'Each file must be 5 MB or smaller'));
+        }
+        if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return next(uploadError(400, `Attach at most ${maxFiles} files`));
+        }
+        return next(uploadError(400, 'The upload could not be read'));
       }
-      if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
-        return next(uploadError(400, `Attach at most ${MAX_FILES_PER_SUBMISSION} files`));
-      }
+      // Malformed multipart bodies surface as plain errors from the parser.
       return next(uploadError(400, 'The upload could not be read'));
-    }
-    // Malformed multipart bodies surface as plain errors from the parser.
-    return next(uploadError(400, 'The upload could not be read'));
-  });
+    });
+  };
 }
+
+// Identity / donation evidence (Phase 1).
+export const receiveDocuments = buildReceiver(MAX_FILES_PER_SUBMISSION);
+
+// Optional request evidence (Phase 2).
+export const receiveEvidenceDocuments = buildReceiver(MAX_EVIDENCE_FILES);

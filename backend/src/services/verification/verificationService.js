@@ -187,12 +187,14 @@ export async function getMyVerification(userId) {
 // Submitting documents
 // ---------------------------------------------------------------------------
 
-function prepareFiles(files) {
+// Shared with request evidence (services/requestEvidence): same signature check,
+// 5 MB cap and random storage key; only the file-count ceiling differs.
+export function prepareFiles(files, maxFiles = MAX_FILES_PER_SUBMISSION) {
   if (!Array.isArray(files) || files.length === 0) {
     throw httpError(400, 'Attach at least one document');
   }
-  if (files.length > MAX_FILES_PER_SUBMISSION) {
-    throw httpError(400, `Attach at most ${MAX_FILES_PER_SUBMISSION} files`);
+  if (files.length > maxFiles) {
+    throw httpError(400, `Attach at most ${maxFiles} files`);
   }
   return files.map((f) => {
     const buffer = f?.buffer;

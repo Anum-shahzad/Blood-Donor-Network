@@ -11,6 +11,8 @@ import conversationsRouter from './routes/conversations.js';
 import publicRouter from './routes/public.js';
 import verificationRouter from './routes/verification.js';
 import adminVerificationRouter from './routes/adminVerification.js';
+import requestEvidenceRouter from './routes/requestEvidence.js';
+import adminRequestEvidenceRouter from './routes/adminRequestEvidence.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { expireOverdueRequests } from './services/requestLifecycle.js';
 import { releaseExpiredCooldowns } from './services/donorCommitment.js';
@@ -89,8 +91,10 @@ app.use('/api/auth', authRouter);
 app.use('/api/donors', donorsRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/requests', requestsRouter);
+app.use('/api/request-evidence', requestEvidenceRouter);
 // Mounted before /api/admin so the more specific path is matched first.
 app.use('/api/admin/verification', adminVerificationRouter);
+app.use('/api/admin/request-evidence', adminRequestEvidenceRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/conversations', conversationsRouter);
 
