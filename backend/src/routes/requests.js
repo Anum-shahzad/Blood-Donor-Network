@@ -47,14 +47,13 @@ router.post('/', authorize('requester'), async (req, res, next) => {
       patient_case,
       contact_phone,
       attendant_name,
-      prescription_slip,
     } = req.body;
 
     const [result] = await pool.query(
       `INSERT INTO requests
          (requester_id, blood_group, units_needed, hospital_name, city, urgency, required_by,
-          patient_case, contact_phone, attendant_name, prescription_slip, status, is_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', FALSE)`,
+          patient_case, contact_phone, attendant_name, status, is_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', FALSE)`,
       [
         req.user.id,
         blood_group,
@@ -66,7 +65,6 @@ router.post('/', authorize('requester'), async (req, res, next) => {
         patient_case ? patient_case.trim() : null,
         contact_phone ? contact_phone.trim() : null,
         attendant_name ? attendant_name.trim() : null,
-        prescription_slip ? prescription_slip.trim() : null,
       ]
     );
 

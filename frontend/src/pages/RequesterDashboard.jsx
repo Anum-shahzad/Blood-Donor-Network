@@ -38,7 +38,6 @@ const emptyForm = {
   patient_case: '',
   contact_phone: '',
   attendant_name: '',
-  prescription_slip: '',
 };
 
 function stateClassFor(request) {
@@ -627,16 +626,6 @@ export default function RequesterDashboard() {
               </label>
 
               <label className="field">
-                Hospital Prescription / Slip Reference
-                <input
-                  type="text"
-                  placeholder="e.g. Doctor slip #CS-8921 or Doctor on Duty Name"
-                  value={form.prescription_slip}
-                  onChange={update('prescription_slip')}
-                />
-              </label>
-
-              <label className="field">
                 Hospital Document / Evidence (Optional)
                 <input
                   key={`new-evidence-${newEvidenceKey}`}
@@ -646,8 +635,9 @@ export default function RequesterDashboard() {
                   onChange={(e) => setNewEvidenceFiles(Array.from(e.target.files || []))}
                 />
                 <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', fontWeight: 400 }}>
-                  Not required &mdash; you can post without it. Up to {(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).max_files} files
-                  (JPEG, PNG, WebP or PDF, 5 MB each). Only you and the admin can open them.
+                  Optional, but recommended. Attaching hospital evidence may help the admin verify your request more
+                  quickly. Upload up to {(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).max_files} files (JPEG, PNG, WebP or PDF;
+                  maximum 5 MB each). Only you and authorized admins can access these documents.
                 </span>
               </label>
 

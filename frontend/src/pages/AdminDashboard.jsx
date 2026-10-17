@@ -482,10 +482,13 @@ export default function AdminDashboard() {
                     <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>REQUESTER CONTACT</span>
                     <span>{r.requester_email} {r.contact_phone ? `· ${r.contact_phone}` : ''}</span>
                   </div>
-                  <div>
-                    <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>PRESCRIPTION / SLIP NOTE</span>
-                    <strong>{r.prescription_slip || 'No slip notes attached'}</strong>
-                  </div>
+                  {/* Older requests only: the slip-reference field was removed from the form. */}
+                  {r.prescription_slip && (
+                    <div>
+                      <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>PRESCRIPTION / SLIP NOTE</span>
+                      <strong>{r.prescription_slip}</strong>
+                    </div>
+                  )}
                   <div>
                     <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>URGENCY &amp; STATUS</span>
                     <span>{r.urgency.toUpperCase()} &bull; {humanizeStatus(r.status)}</span>
