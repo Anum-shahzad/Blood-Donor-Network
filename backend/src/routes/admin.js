@@ -3,6 +3,7 @@ import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { BLOOD_GROUPS } from '../utils/validation.js';
 import { rejectRequestByAdmin } from '../services/requestLifecycle.js';
+import { getVerificationSummaries } from '../services/verification/verificationService.js';
 
 const router = Router();
 
@@ -27,10 +28,20 @@ router.get('/analytics', async (req, res, next) => {
       `SELECT
          COUNT(*) AS total_donors,
          SUM(CASE WHEN is_available = TRUE AND current_status = 'AVAILABLE' THEN 1 ELSE 0 END) AS available_donors,
-         SUM(CASE WHEN is_blood_group_verified = TRUE THEN 1 ELSE 0 END) AS verified_donors,
          SUM(CASE WHEN current_status = 'COOLDOWN' THEN 1 ELSE 0 END) AS in_cooldown_donors
        FROM donor_profiles`
     );
+
+    // Verified / trusted counts come from approved verification records (the
+    // same rules every badge uses), never from the legacy admin toggle.
+    const [donorIdRows] = await pool.query('SELECT user_id FROM donor_profiles');
+    const summaries = await getVerificationSummaries(donorIdRows.map((r) => r.user_id));
+    let identityVerifiedDonors = 0;
+    let trustedDonors = 0;
+    for (const v of summaries.values()) {
+      if (v.identity_verified) identityVerifiedDonors += 1;
+      if (v.trusted) trustedDonors += 1;
+    }
 
     // 2. Supply vs Demand by blood group
     const [supplyDemandRows] = await pool.query(
@@ -83,7 +94,9 @@ router.get('/analytics', async (req, res, next) => {
         fulfillment_rate_percent: fulfillmentRate,
         total_donors: Number(donorStats?.total_donors || 0),
         available_donors: Number(donorStats?.available_donors || 0),
-        verified_donors: Number(donorStats?.verified_donors || 0),
+        // Identity-verified donors (admin-approved identity evidence).
+        verified_donors: identityVerifiedDonors,
+        trusted_donors: trustedDonors,
         in_cooldown_donors: Number(donorStats?.in_cooldown_donors || 0),
       },
       blood_group_balance: supplyDemandRows,
@@ -209,11 +222,11 @@ router.get('/donors', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.city, COALESCE(u.is_suspended, FALSE) AS is_suspended,
-              dp.blood_group, dp.is_available, dp.is_blood_group_verified, dp.last_donation_date,
+              dp.blood_group, dp.is_available, dp.last_donation_date,
               dp.current_status, dp.committed_request_id, dp.cooldown_until
        FROM donor_profiles dp
        JOIN users u ON u.id = dp.user_id
-       ORDER BY dp.is_blood_group_verified ASC, u.name ASC`
+       ORDER BY u.name ASC`
     );
 
     // Enrich with donation counts
@@ -228,38 +241,34 @@ router.get('/donors', async (req, res, next) => {
       })
     );
 
-    res.json(enriched);
+    const summaries = await getVerificationSummaries(enriched.map((d) => d.id));
+    const withVerification = enriched
+      .map((d) => ({
+        ...d,
+        // Kept for API compatibility; always false (nothing verifies blood group).
+        is_blood_group_verified: false,
+        verification: summaries.get(Number(d.id)),
+      }))
+      // Least-verified first, like the old ordering, then by name.
+      .sort((a, b) => a.verification.level - b.verification.level || String(a.name).localeCompare(String(b.name)));
+
+    res.json(withVerification);
   } catch (err) {
     next(err);
   }
 });
 
-// PATCH /api/admin/donors/:id/verify — confirm/unconfirm donor's blood group
-router.patch('/donors/:id/verify', async (req, res, next) => {
-  try {
-    const donorUserId = Number(req.params.id);
-    if (!Number.isInteger(donorUserId)) {
-      return res.status(400).json({ error: 'Invalid donor id' });
-    }
-
-    const { verified } = req.body;
-    if (typeof verified !== 'boolean') {
-      return res.status(400).json({ error: 'verified must be true or false' });
-    }
-
-    const [result] = await pool.query(
-      'UPDATE donor_profiles SET is_blood_group_verified = ? WHERE user_id = ?',
-      [verified, donorUserId]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Donor profile not found' });
-    }
-
-    res.json({ status: 'ok', is_blood_group_verified: verified });
-  } catch (err) {
-    next(err);
-  }
+// PATCH /api/admin/donors/:id/verify — REMOVED.
+// A manual toggle let an admin mark a donor "verified" with no evidence, which
+// misrepresented what was checked. Verification now only comes from reviewing
+// submitted documents (POST /api/admin/verification/submissions/:id/approve).
+// The route stays (admin-only) so old clients get a clear answer, not a 404.
+router.patch('/donors/:id/verify', (req, res) => {
+  res.status(410).json({
+    error:
+      'Manual donor verification has been removed. Review the donor\'s submitted identity document under ID Review instead.',
+    code: 'MANUAL_VERIFICATION_REMOVED',
+  });
 });
 
 // PATCH /api/admin/donors/:id/status — suspend or reinstate an account for compliance.

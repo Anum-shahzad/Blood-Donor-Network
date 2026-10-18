@@ -36,9 +36,11 @@ function scoreCandidate(donor, request) {
     reasons.push('Same city as the request');
   }
 
-  if (donor.is_blood_group_verified) {
+  // Identity verification is derived from admin-approved evidence (see
+  // services/verification). It says nothing about blood group or fitness.
+  if (donor.verification?.identity_verified) {
     score += VERIFIED_POINTS;
-    reasons.push('Blood group verified');
+    reasons.push('Identity verified by an admin');
   }
 
   const months = monthsSince(donor.last_donation_date);
@@ -57,7 +59,9 @@ function scoreCandidate(donor, request) {
     name: donor.name,
     city: donor.city,
     blood_group: donor.blood_group,
-    is_blood_group_verified: Boolean(donor.is_blood_group_verified),
+    // Kept for API compatibility. Always false: nothing verifies blood group.
+    is_blood_group_verified: false,
+    verification: donor.verification || null,
     last_donation_date: donor.last_donation_date,
     score,
     reasons,

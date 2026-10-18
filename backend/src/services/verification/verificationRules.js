@@ -3,9 +3,9 @@
 //
 // Levels are DERIVED, never stored and never writable by the user:
 //   1  Registered                   — every donor account
-//   2  Identity submitted, pending  — latest identity submission is pending
-//   3  Identity approved            — latest identity submission is approved
-//   4  Donation evidence approved   — level 3 AND latest evidence is approved
+//   2  Identity verification pending — latest identity submission is pending
+//   3  Identity verified            — latest identity submission is approved
+//   4  Donation evidence verified   — level 3 AND latest evidence is approved
 //   5  Trusted                      — level 4 AND account in good standing AND
 //                                     no upheld reports
 //
@@ -25,6 +25,7 @@ export const REASON_MAX_LENGTH = 500;
 // account, never about health.
 export const VERIFICATION_NOTICE =
   'Verification confirms who an account belongs to and that a past donation is documented. ' +
+  'It does not verify blood group: a blood group is self-reported here and is only confirmed by testing at a blood bank or hospital. ' +
   'It is not a medical check and does not mean anyone is medically fit to donate. ' +
   'Fitness to donate is always decided by a licensed blood bank or hospital screening.';
 
@@ -34,16 +35,16 @@ export const LEVEL_INFO = {
     description: 'Your account is registered. Identity verification is optional.',
   },
   2: {
-    label: 'Identity submitted',
+    label: 'Identity verification pending',
     description: 'Your identity document is waiting for admin review.',
   },
   3: {
-    label: 'Identity approved',
-    description: 'An admin has approved your identity document.',
+    label: 'Identity verified',
+    description: 'An admin has approved your identity document. This does not verify your blood group or medical fitness.',
   },
   4: {
-    label: 'Donation evidence approved',
-    description: 'An admin has approved your evidence of a previous donation.',
+    label: 'Donation evidence verified',
+    description: 'An admin has approved your evidence of a previous donation. This does not verify your blood group or medical fitness.',
   },
   5: {
     label: 'Trusted',
@@ -68,6 +69,32 @@ export function computeVerificationLevel({
   }
   if (identityStatus === 'pending') return 2;
   return 1;
+}
+
+// Compact, display-safe summary derived from a level. This is the ONLY shape
+// other endpoints (donor cards, matches, admin registry) expose, so every
+// screen shows the same states. blood_group_verified is always false: no
+// evidence-review process in this project verifies a blood group, and identity
+// or donation-evidence approval must never be read as one.
+export const BADGE_KEYS = {
+  1: 'registered',
+  2: 'identity_pending',
+  3: 'identity_verified',
+  4: 'donation_evidence_verified',
+  5: 'trusted',
+};
+
+export function describeVerification(level) {
+  const safe = LEVEL_INFO[level] ? level : 1;
+  return {
+    level: safe,
+    badge: BADGE_KEYS[safe],
+    label: LEVEL_INFO[safe].label,
+    identity_verified: safe >= 3,
+    donation_evidence_verified: safe >= 4,
+    trusted: safe === 5,
+    blood_group_verified: false,
+  };
 }
 
 // What a donor may submit next, given the latest status of each type.

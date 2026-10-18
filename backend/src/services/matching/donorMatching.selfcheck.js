@@ -16,13 +16,13 @@ const request = { city: 'Sukkur' };
 
 const candidates = [
   // Same city, verified, donated 6 months ago -> 30 + 20 + 25 = 75
-  { id: 1, name: 'Donor A', city: 'Sukkur', last_donation_date: monthsAgo(6), is_blood_group_verified: true },
+  { id: 1, name: 'Donor A', city: 'Sukkur', last_donation_date: monthsAgo(6), verification: { identity_verified: true } },
   // Different city, unverified, never donated (null) -> 0 + 0 + 50 = 50
-  { id: 2, name: 'Donor B', city: 'Karachi', last_donation_date: null, is_blood_group_verified: false },
+  { id: 2, name: 'Donor B', city: 'Karachi', last_donation_date: null, verification: { identity_verified: false } },
   // Same city, unverified, donated 1 month ago -> inside 3-month cooldown, must be EXCLUDED
-  { id: 3, name: 'Donor C', city: 'Sukkur', last_donation_date: monthsAgo(1), is_blood_group_verified: false },
+  { id: 3, name: 'Donor C', city: 'Sukkur', last_donation_date: monthsAgo(1), verification: { identity_verified: false } },
   // Same city, unverified, donated 12+ months ago -> 30 + 0 + 50 = 80
-  { id: 4, name: 'Donor D', city: 'Sukkur', last_donation_date: monthsAgo(14), is_blood_group_verified: false },
+  { id: 4, name: 'Donor D', city: 'Sukkur', last_donation_date: monthsAgo(14), verification: { identity_verified: false } },
 ];
 
 const ranked = rankDonorCandidates(candidates, request);
@@ -45,7 +45,7 @@ if (donorA.reasons.includes('Same city as the request')) pass('same-city bonus r
 else fail('same-city bonus reason missing for a same-city donor');
 
 // 4. Verified bonus is actually applied.
-if (donorA.score >= 45) pass('verified + same-city bonuses both contributed to score');
+if (donorA.score >= 45) pass('identity-verified + same-city bonuses both contributed to score');
 else fail(`donor A score too low to include verified + city bonuses: ${donorA.score}`);
 
 console.log(failures === 0 ? '\nAll matching self-checks passed.' : `\n${failures} matching self-check(s) FAILED.`);

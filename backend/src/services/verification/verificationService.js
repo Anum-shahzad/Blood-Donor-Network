@@ -21,6 +21,7 @@ import {
   LEVEL_INFO,
   VERIFICATION_NOTICE,
   computeVerificationLevel,
+  describeVerification,
   submissionPermissions,
   validateReason,
 } from './verificationRules.js';
@@ -99,6 +100,16 @@ export async function getVerificationStates(userIds, exec = pool) {
   return states;
 }
 
+// Display summaries ({ level, badge, label, identity_verified, ... }) for many
+// users, derived from the same rows and rules as getVerificationStates().
+// Returns Map<userId, summary>. Users with no records are 'registered'.
+export async function getVerificationSummaries(userIds, exec = pool) {
+  const states = await getVerificationStates(userIds, exec);
+  const summaries = new Map();
+  for (const [id, state] of states) summaries.set(id, describeVerification(state.level));
+  return summaries;
+}
+
 async function loadFilesBySubmission(submissionIds, exec = pool) {
   const map = new Map();
   if (submissionIds.length === 0) return map;
@@ -160,6 +171,7 @@ export async function getMyVerification(userId) {
 
   return {
     level: state.level,
+    verification: describeVerification(state.level),
     level_label: LEVEL_INFO[state.level].label,
     level_description: LEVEL_INFO[state.level].description,
     levels: Object.entries(LEVEL_INFO).map(([level, info]) => ({

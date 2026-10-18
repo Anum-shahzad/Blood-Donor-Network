@@ -7,6 +7,7 @@ import { getCompatibleDonorGroups } from '../services/matching/compatibility.js'
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 import { acceptRequest, declineRequest } from '../services/donorCommitment.js';
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
+import { getVerificationSummaries } from '../services/verification/verificationService.js';
 
 const router = Router();
 
@@ -185,7 +186,7 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
 
     const [candidates] = await pool.query(
       `SELECT u.id, u.name, u.city, u.phone,
-              dp.blood_group, dp.last_donation_date, dp.is_blood_group_verified,
+              dp.blood_group, dp.last_donation_date,
               COALESCE(dp.phone_masked, TRUE) AS phone_masked,
               dp.current_status, dp.committed_request_id
        FROM donor_profiles dp
@@ -194,7 +195,9 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
       [compatibleGroups]
     );
 
-    const ranked = rankDonorCandidates(candidates, request);
+    const summaries = await getVerificationSummaries(candidates.map((c) => c.id));
+    const withVerification = candidates.map((c) => ({ ...c, verification: summaries.get(Number(c.id)) }));
+    const ranked = rankDonorCandidates(withVerification, request);
 
     // Apply privacy masking if donor enabled phone masking and is not committed to this request
     const matches = ranked.map((m) => {

@@ -6,6 +6,7 @@ import { EFFECTIVE_EXPIRY_SQL, defaultTtlHours } from '../services/requestLifecy
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { isEligibleByRecency } from '../services/matching/donorMatching.js';
 import { computeCooldownInfo } from '../services/matching/donorState.js';
+import { getVerificationSummaries } from '../services/verification/verificationService.js';
 import { cancelCommitment, advanceCommitmentStep, recordDonation } from '../services/donorCommitment.js';
 
 const router = Router();
@@ -19,7 +20,7 @@ router.get('/me', async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.city,
-              dp.blood_group, dp.last_donation_date, dp.is_available, dp.is_blood_group_verified,
+              dp.blood_group, dp.last_donation_date, dp.is_available,
               dp.current_status, dp.committed_request_id, dp.commitment_started_at,
               dp.commitment_ended_at, dp.cooldown_until,
               COALESCE(dp.phone_masked, TRUE) AS phone_masked,
@@ -83,8 +84,14 @@ router.get('/me', async (req, res, next) => {
       committedRequest = reqRows[0] || null;
     }
 
+    const verification = (await getVerificationSummaries([req.user.id])).get(Number(req.user.id));
+
     res.json({
       ...donor,
+      // Derived from approved verification records only. The legacy column is
+      // never read; kept in the payload (always false) for API compatibility.
+      is_blood_group_verified: false,
+      verification,
       cooldown_info: cooldownInfo,
       total_donations: totalDonations,
       lives_saved: totalDonations * 3,

@@ -5,6 +5,7 @@ import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import VerificationPanel from '../components/VerificationPanel.jsx';
+import VerificationBadge from '../components/VerificationBadge.jsx';
 import {
   DropletIcon,
   MapPinIcon,
@@ -965,9 +966,11 @@ export default function DonorDashboard() {
                   </span>
                 </div>
               </div>
-              <span className="badge" style={{ background: 'rgba(255,255,255,0.2)', color: '#fff' }}>
-                {profile?.is_blood_group_verified ? 'VERIFIED DONOR' : 'REGISTERED'}
-              </span>
+              <VerificationBadge
+                verification={profile?.verification}
+                uppercase
+                style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none' }}
+              />
             </div>
 
             <div className="donor-id-main">

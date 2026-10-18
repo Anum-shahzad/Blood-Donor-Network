@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch, apiUpload } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import VerificationBadge from '../components/VerificationBadge.jsx';
 import Autocomplete from '../components/Autocomplete.jsx';
 import RequestEvidencePanel, { checkEvidenceFiles, DEFAULT_EVIDENCE_LIMITS } from '../components/RequestEvidencePanel.jsx';
 import {
@@ -768,11 +769,7 @@ export default function RequesterDashboard() {
 
                         <p className="record-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.5rem' }}>
                           <MapPinIcon size={14} /> {m.city || '—'}
-                          {m.is_blood_group_verified && (
-                            <span style={{ color: '#15803d', marginLeft: 'auto', fontWeight: 600 }}>
-                              <ShieldCheckIcon size={12} /> Group Verified
-                            </span>
-                          )}
+                          <VerificationBadge verification={m.verification} style={{ marginLeft: 'auto' }} />
                         </p>
 
                         <div style={{ background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', fontSize: '0.8rem', border: '1px solid var(--border)', marginBottom: '0.75rem' }}>

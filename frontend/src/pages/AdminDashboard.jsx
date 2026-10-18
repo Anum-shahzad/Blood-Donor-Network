@@ -4,6 +4,7 @@ import { apiGet, apiPatch, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
+import VerificationBadge from '../components/VerificationBadge.jsx';
 import AdminRequestEvidence from '../components/AdminRequestEvidence.jsx';
 import {
   GaugeIcon,
@@ -139,19 +140,6 @@ export default function AdminDashboard() {
     }
   }
 
-  async function verifyDonor(id, verified) {
-    setError('');
-    setSuccessMsg('');
-    try {
-      await apiPatch(`/api/admin/donors/${id}/verify`, { verified });
-      setSuccessMsg(`Donor #${id} blood group set to: ${verified ? 'Verified' : 'Unverified'}`);
-      loadDonors();
-      loadAnalytics();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   async function toggleDonorSuspension(id, currentlySuspended) {
     const next = !currentlySuspended;
     const action = next ? 'suspend' : 'reinstate';
@@ -218,7 +206,7 @@ export default function AdminDashboard() {
 
   const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const pendingRequestsCount = requests.filter((r) => !r.is_verified).length;
-  const pendingDonorsCount = donors.filter((d) => !d.is_blood_group_verified).length;
+  const pendingDonorsCount = donors.filter((d) => !d.verification?.identity_verified).length;
   // Evidence waiting for a decision on a request that is still live; evidence
   // on a closed request can no longer be reviewed, so it is not counted.
   const pendingEvidenceCount = requests.filter(
@@ -263,7 +251,7 @@ export default function AdminDashboard() {
               <div className="stat-card-value">{donors.length}</div>
             </div>
             <div className="stat-card">
-              <div className="stat-card-label">Unverified Donors</div>
+              <div className="stat-card-label">Identity Not Verified</div>
               <div className="stat-card-value">{pendingDonorsCount}</div>
             </div>
           </div>
@@ -592,18 +580,12 @@ export default function AdminDashboard() {
                           <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
                             {d.current_status || 'AVAILABLE'}
                           </span>
+                          <VerificationBadge verification={d.verification} />
                         </div>
                       </td>
                       <td>{d.total_donations || (d.last_donation_date ? 1 : 0)} times</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <button
-                            onClick={() => verifyDonor(d.id, !d.is_blood_group_verified)}
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
-                          >
-                            {d.is_blood_group_verified ? 'Un-verify' : 'Verify Group'}
-                          </button>
                           <button
                             onClick={() => toggleDonorSuspension(d.id, d.is_suspended)}
                             className="btn btn-text"
