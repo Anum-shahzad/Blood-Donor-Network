@@ -13,7 +13,7 @@ The project combines a React frontend, a Node.js and Express backend, and a TiDB
 </p>
 
 <p align="center">
-  <img src="docs/images/homepage.png" alt="Blood Donor Network — application homepage" width="100%">
+  <img src="docs/homepage.png" alt="Blood Donor Network — application homepage" width="100%">
 </p>
 
 <p align="center">
