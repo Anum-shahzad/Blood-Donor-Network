@@ -1,196 +1,437 @@
-# Blood Donor & Emergency Request Network
+# Blood Donor Network
 
-CSC-206 Software Engineering team project — Aror University, Sukkur.
+### A Full-Stack Platform for Emergency Blood Donor Coordination
 
-## What this is
+Blood Donor Network is a web application built to streamline emergency blood requests and connect people in need with potentially eligible blood donors. It brings donor discovery, request verification, matching, donor responses, and communication into one centralized platform.
 
-A coordination platform connecting blood donors with people who need blood
-in an emergency. It does **not** perform medical screening, guarantee
-compatibility, or replace a hospital/blood bank — final medical decisions
-always sit with an authorized facility. The app surfaces likely-compatible,
-available, nearby donors, ranks them, tracks a request's status through to
-fulfillment, and gives an admin a way to verify genuine requests and
-donor-declared blood groups.
+The project combines a React frontend, a Node.js and Express backend, and a TiDB Cloud database to support a structured workflow for emergency blood coordination.
 
-## Live deployment
+<p align="center">
+  <a href="https://blood-donor-network-gilt.vercel.app/"><strong>Live Application</strong></a>
+  &nbsp; · &nbsp;
+  <a href="https://github.com/Anum-shahzad/Blood-Donor-Network"><strong>Source Code</strong></a>
+</p>
 
-- Frontend: `https://blood-donor-network-gilt.vercel.app`
-- Backend API: `https://blood-donor-network-production.up.railway.app`
-- Database: MySQL on Railway
+<p align="center">
+  <img src="docs/images/homepage.png" alt="Blood Donor Network — application homepage" width="100%">
+</p>
 
-## Stack
+<p align="center">
+  <img src="https://img.shields.io/badge/Release-v1.0.0-B22222?style=flat-square" alt="Version 1.0.0">
+  <img src="https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/Backend-Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/Database-TiDB%20Cloud-4479A1?style=flat-square" alt="TiDB Cloud">
+  <img src="https://img.shields.io/badge/Deployment-Vercel-black?style=flat-square&logo=vercel" alt="Vercel">
+</p>
 
-- Frontend: React + Vite, React Router
-- Backend: Node.js + Express
-- Database: MySQL
-- Auth: JWT + bcrypt
-- Deploy: Vercel (frontend) + Railway (backend + MySQL)
+---
 
-## Roles
+## Table of Contents
 
-- **Donor** — registers, sets blood group and availability, views their
-  profile, toggles availability.
-- **Requester** — creates blood requests, views their own requests, views
-  ranked donor matches for a request, marks a request fulfilled or
-  cancelled.
-- **Admin** — verifies requests and donor-declared blood groups. Admin
-  accounts are never created through public signup (see "Creating the
-  admin account" below).
+- [Overview](#overview)
+- [Core Features](#core-features)
+- [Technology Stack](#technology-stack)
+- [System Architecture](#system-architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Configuration](#environment-configuration)
+- [Running the Application](#running-the-application)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Security and Privacy](#security-and-privacy)
+- [Medical Disclaimer](#medical-disclaimer)
+- [Version 1.0.0](#version-100)
+- [Author](#author)
 
-## Repo layout
+## Overview
 
+During a medical emergency, finding a suitable blood donor can require contacting multiple people and coordinating information across different channels. Blood Donor Network aims to make this process more organized by providing a centralized system for managing donors and emergency blood requests.
+
+The application supports different user roles and provides workflows for submitting requests, discovering potential donors, verifying information, recording donor responses, and managing communication associated with requests.
+
+### Project Objectives
+
+- Simplify donor discovery during blood-related emergencies.
+- Organize emergency requests and their lifecycle.
+- Identify potential donors using blood-group compatibility and availability criteria.
+- Support request verification and controlled donor-requester interactions.
+- Improve visibility into donor status, commitments, and donation history.
+- Protect sensitive information through authentication and access controls.
+
+## Core Features
+
+### 1. Authentication and Role-Based Access
+
+The application supports distinct roles for donors, requesters, and administrators.
+
+- User registration and login.
+- Password hashing using bcrypt.
+- JWT-based authentication for protected operations.
+- Role-based authorization for restricted features.
+- Protected administrator account initialization.
+
+### 2. Donor Profiles and Availability
+
+Donor management provides the information needed to identify and coordinate with potential donors.
+
+- Donor profiles and blood-group information.
+- Availability and donor-status management.
+- Donation history tracking.
+- Eligibility checks using configured donation cooldown rules.
+- Commitment tracking for accepted requests.
+- Donor privacy and notification preferences.
+
+### 3. Emergency Blood Requests
+
+Requesters can submit and manage emergency blood requests through a structured workflow.
+
+- Specify the required blood group and urgency.
+- Include hospital and location information.
+- Record relevant case details and supporting information.
+- Track request verification and lifecycle status.
+- Manage eligible requests through the application's request workflows.
+- Enforce configured restrictions intended to reduce request abuse.
+
+### 4. Donor Matching
+
+The matching system helps identify potential donors based on configured eligibility and ranking criteria.
+
+- Blood-group compatibility filtering.
+- Donor availability checks.
+- Donation cooldown checks.
+- City-based matching preferences.
+- Ranking based on configured matching factors, including verification status and donation history.
+- Matching scores and explanations where supported by the implementation.
+
+The matching system assists donor discovery; it does not replace professional medical screening or laboratory compatibility testing.
+
+### 5. Donor Responses and Commitments
+
+The application supports a workflow for coordinating donors who are identified for a request.
+
+- Accept or decline eligible requests.
+- Track donor commitments and relevant status changes.
+- Manage commitment cancellation through applicable rules.
+- Record donation information.
+- Update relevant donor and request state.
+
+### 6. In-App Messaging
+
+The conversation system supports communication between authorized participants.
+
+- Create or retrieve conversations associated with eligible requests.
+- Send and retrieve messages.
+- Restrict access according to the application's participant authorization rules.
+
+### 7. Request Verification and Administration
+
+Administrative workflows support oversight of emergency requests and donor information.
+
+- Review and verify blood requests.
+- Verify donor-declared blood-group information.
+- Manage relevant donor and request records.
+- Restrict administrative operations to authorized accounts.
+
+### 8. Public Emergency Listings
+
+Public emergency listings provide access to eligible, verified requests without exposing all requester information.
+
+- Display eligible emergency requests.
+- Present relevant blood-group, location, and urgency information.
+- Apply configured visibility and expiration rules.
+- Avoid exposing direct requester contact details in public listings.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Frontend framework | React 18 |
+| Build tool | Vite 5 |
+| Client-side routing | React Router 6 |
+| Backend runtime | Node.js |
+| Backend framework | Express.js |
+| Database | TiDB Cloud — MySQL-compatible |
+| Authentication | JSON Web Tokens |
+| Password security | bcrypt |
+| Frontend hosting | Vercel |
+| Backend hosting | Vercel Serverless Functions |
+| Version control | Git and GitHub |
+
+## System Architecture
+
+The application separates the user interface, backend business logic, and persistent database.
+
+```text
+                  USERS
+                    |
+                    v
+          React + Vite Frontend
+                 Vercel
+                    |
+                    | HTTPS / REST API
+                    v
+            Express.js Backend
+          Vercel Serverless Functions
+                    |
+                    | Database Connection
+                    v
+              TiDB Cloud
+         MySQL-Compatible Database
 ```
-backend/     Express API, matching engine, DB schema
-frontend/    React app
+
+### Architecture Responsibilities
+
+**Frontend**
+
+The React application provides the user interface, navigation, forms, dashboards, and interactions for donors, requesters, and administrators.
+
+**Backend**
+
+The Express API handles authentication, authorization, request validation, donor matching, request lifecycle operations, commitment rules, messaging, and database access.
+
+**Database**
+
+TiDB Cloud stores the application's persistent records. The backend connects to the database using server-side configuration and credentials.
+
+**Deployment**
+
+The frontend and backend are deployed on Vercel, while the database is hosted separately on TiDB Cloud.
+
+## Project Structure
+
+The following is a high-level overview of the principal application components.
+
+```text
+Blood-Donor-Network/
+├── backend/
+│   ├── api/
+│   │   └── index.js
+│   ├── src/
+│   │   ├── config/
+│   │   ├── db/
+│   │   ├── middleware/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   │   ├── matching/
+│   │   │   ├── authService.js
+│   │   │   ├── chatService.js
+│   │   │   ├── donorCommitment.js
+│   │   │   ├── donorState.js
+│   │   │   └── requestLifecycle.js
+│   │   └── utils/
+│   ├── .env.example
+│   ├── package.json
+│   └── vercel.json
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   ├── .env.example
+│   ├── package.json
+│   └── vercel.json
+├── docs/
+│   └── images/
+│       └── homepage.png
+├── AI_USAGE_DISCLOSURE.md
+└── README.md
 ```
 
-## Local setup
+This overview highlights the main components; consult the repository for the complete and current file structure.
 
-### Database
-1. Create a MySQL database (locally, or a free Railway MySQL instance).
-2. Run `backend/src/db/schema.sql` against it.
+## Getting Started
 
-### Backend
+Follow these instructions to set up a local development environment.
+
+### Prerequisites
+
+Ensure that you have installed:
+
+- [Node.js](https://nodejs.org/)
+- npm, included with Node.js
+- [Git](https://git-scm.com/)
+- Access to a TiDB Cloud or compatible MySQL database
+- A code editor such as Visual Studio Code
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Anum-shahzad/Blood-Donor-Network.git
+cd Blood-Donor-Network
 ```
+
+### 2. Configure the Database
+
+Create or select a database in TiDB Cloud and obtain the connection details required by the backend.
+
+Initialize the database using the project's schema and apply the required SQL migrations in the correct order.
+
+Before running the application, verify that the database contains every table and column required by the current backend implementation. An older schema may not include fields introduced by later donor-state, commitment, or messaging changes.
+
+Keep database credentials private and configure the connection only on the backend.
+
+### 3. Install Backend Dependencies
+
+```bash
 cd backend
-cp .env.example .env    # fill in DB credentials, a JWT secret, and (only if
-                         # bootstrapping an admin) ADMIN_BOOTSTRAP_SECRET
 npm install
-npm run dev              # http://localhost:5000
 ```
 
-### Frontend
-```
+Create a local `.env` file using the provided `.env.example` as a reference.
+
+Configure all required database credentials, authentication secrets, CORS settings, and other environment variables used by the backend.
+
+### 4. Install Frontend Dependencies
+
+Open a separate terminal from the repository root:
+
+```bash
 cd frontend
-cp .env.example .env    # set VITE_API_URL to your backend URL
 npm install
-npm run dev              # http://localhost:5173
 ```
 
-## Running the tests
+Create the frontend `.env` file using `frontend/.env.example`.
 
-These are plain-Node self-check scripts, no test framework or database
-required:
-```
-cd backend
-npm run test:compatibility   # blood-type compatibility, all 8 groups
-npm run test:auth            # password hashing + JWT sign/verify
-npm run test:matching        # donor ranking engine
+Set the API URL to the address of your locally running backend.
+
+```env
+VITE_API_URL=http://localhost:5000
 ```
 
-## API overview
+Use the actual backend port and API URL defined by your current configuration. Vite environment variables prefixed with `VITE_` are exposed to the browser and must not contain server-side secrets.
 
-All endpoints are under `/api`. Protected routes require
-`Authorization: Bearer <token>` from `/api/auth/login` or
-`/api/auth/signup`.
+## Environment Configuration
 
-| Method | Path | Who | What |
-|---|---|---|---|
-| GET | `/health` | anyone | API + DB connectivity check |
-| POST | `/auth/signup` | anyone | Create a donor or requester account |
-| POST | `/auth/login` | anyone | Log in, get a JWT |
-| POST | `/auth/bootstrap-admin` | secret-gated | Create the one admin account (see below) |
-| GET | `/donors/me` | donor | View own profile |
-| PUT | `/donors/me` | donor | Set/update blood group + last donation date |
-| PATCH | `/donors/me/availability` | donor | Toggle availability |
-| POST | `/requests` | requester | Create a blood request |
-| GET | `/requests/mine` | requester | List own requests |
-| PATCH | `/requests/:id/status` | requester | Mark own request fulfilled or cancelled |
-| GET | `/requests/:id/matches` | requester | Ranked compatible donors for own request |
-| GET | `/admin/requests` | admin | List all requests |
-| PATCH | `/admin/requests/:id/verify` | admin | Verify/un-verify a request |
-| GET | `/admin/donors` | admin | List all donor profiles |
-| PATCH | `/admin/donors/:id/verify` | admin | Verify/un-verify a donor's blood group |
+The exact variable names should match the current environment templates in the repository.
 
-## Database schema
+| Configuration | Purpose |
+|---|---|
+| Database host and port | Connect the backend to TiDB Cloud |
+| Database username and password | Authenticate the database connection |
+| Database name | Select the application database |
+| `JWT_SECRET` | Sign and verify authentication tokens |
+| `ADMIN_BOOTSTRAP_SECRET` | Protect administrator initialization, where applicable |
+| `CORS_ORIGIN` | Restrict permitted frontend origins |
+| `VITE_API_URL` | Tell the frontend where to send API requests |
 
-Four tables — `users`, `donor_profiles`, `requests`, `request_responses`
-(the last one reserved for a future donor-accept/decline flow; not yet
-wired into a route). Full definitions, foreign keys, and indexes are in
-`backend/src/db/schema.sql`.
+Use `.env.example` files as the source of truth for required names and formats. Do not commit `.env` files, database passwords, private keys, or production secrets to GitHub.
 
-## Matching algorithm
+## Running the Application
 
-Blood-type compatibility is isolated in
-`backend/src/services/matching/compatibility.js` as a pure function —
-standard ABO/Rh whole-blood rules (O– universal donor, AB+ universal
-recipient), verified against all 8 blood groups in
-`compatibility.selfcheck.js`.
+### Start the Backend
 
-Given a request, `GET /api/requests/:id/matches`:
-1. Computes every donor blood group compatible with the request's blood
-   group.
-2. Queries donors who are `is_available = true` and have one of those
-   compatible groups.
-3. Excludes any donor still inside the 3-month post-donation cooldown
-   (`backend/src/services/matching/donorMatching.js`).
-4. Scores the remainder: +30 for same city as the request, +20 for a
-   verified blood group, up to +50 scaled by months since last donation
-   (capped at 12 months; no prior donation on record scores the full 50).
-5. Returns donors sorted by score, each with the specific reasons behind
-   its score.
+From the `backend` directory, run the development command defined in `backend/package.json`.
 
-This returns **potential matches**, never a medical guarantee — the
-response and the UI both say so explicitly.
+For example, if the package defines a `dev` script:
 
-## Request lifecycle
+```bash
+npm run dev
+```
 
-`pending -> verified -> matched -> fulfilled`, with `expired` and
-`cancelled` as side exits. `verified` is set only by an admin.
-`fulfilled`/`cancelled` are set only by the requester who owns the
-request, and only from a state that isn't already closed out. `matched`
-is not yet auto-set by the system (would happen when a donor accepts,
-which needs `request_responses` wired up — see Known limitations).
+### Start the Frontend
 
-## Verification
+From the `frontend` directory, run:
 
-- **Account verification**: signup requires a unique email + hashed
-  password. No email/phone confirmation step yet.
-- **Donor verification**: `is_blood_group_verified`, settable only by an
-  admin (`PATCH /api/admin/donors/:id/verify`). Confirms the platform has
-  *some* basis for trusting the self-declared blood group — not a lab
-  crossmatch.
-- **Request verification**: `is_verified`, settable only by an admin
-  (`PATCH /api/admin/requests/:id/verify`). Confirms the request looks
-  genuine — not a medical judgment on the patient's need.
+```bash
+npm run dev
+```
 
-## Creating the admin account
+Open the local URL displayed by Vite in your browser. The default frontend development address is commonly `http://localhost:5173`.
 
-Admin accounts cannot be created through public signup. Instead:
+Both applications must be configured to communicate with each other, and the backend must be able to connect to the database.
 
-1. Set `ADMIN_BOOTSTRAP_SECRET` (any long random string) on the backend's
-   environment variables.
-2. Call `POST /api/auth/bootstrap-admin` once with `{ name, email,
-   password, secret }` matching that secret.
-3. This endpoint refuses to run again once any admin account exists, so
-   there's no ongoing attack surface. Remove the env var afterward if you
-   like — not required, but tidy.
+## Testing
+
+The backend provides test scripts for checking important application logic.
+
+Run the available test suite from the backend directory:
+
+```bash
+npm test
+```
+
+Depending on the scripts currently defined in `backend/package.json`, individual checks may cover:
+
+- Blood-group compatibility.
+- Donor eligibility and matching.
+- Donor state and cooldown rules.
+- Authentication behavior.
+- Conversation and messaging rules.
+
+Consult the package scripts for the exact supported commands. Passing application-level checks does not, by itself, establish that the production deployment, database migrations, or every end-to-end workflow is working correctly.
 
 ## Deployment
 
-- **Backend + DB**: Railway project with a MySQL plugin and this repo's
-  `backend/` as the service root. Environment variables reference the
-  MySQL service directly (`${{MySQL.MYSQLHOST}}`, etc.) rather than
-  copy-pasted values, so they stay correct if Railway rotates credentials.
-- **Frontend**: Vercel project with `frontend/` as the root directory,
-  `VITE_API_URL` pointing at the Railway backend's public domain.
-  `frontend/vercel.json` rewrites all paths to `index.html` so React
-  Router's client-side routes don't 404 on direct load or refresh.
-- Both redeploy automatically on `git push` to the connected branch.
+### Frontend — Vercel
 
-## Known limitations
+1. Import the GitHub repository into Vercel.
+2. Configure the project to build the frontend from the `frontend` directory.
+3. Set the required frontend environment variables.
+4. Set `VITE_API_URL` to the deployed backend API address.
+5. Deploy and verify that direct navigation and page refresh work correctly.
 
-- No geolocation/distance calculation — matching uses exact city-string
-  matching only (case-insensitive), not proximity.
-- No email/SMS/WhatsApp notifications — everything is pulled by the
-  frontend (in-app only), nothing is pushed to donors yet.
-- `request_responses` (donor accept/decline) exists in the schema but has
-  no route yet — there's currently no "notify donor, donor accepts" step,
-  so `status` never automatically reaches `matched`.
-- No rate limiting, duplicate-request detection, or abuse reporting yet.
-- No multi-language support yet (English only).
-- No analytics dashboard yet.
+### Backend — Vercel
 
-## AI usage disclosure
+1. Configure the backend project using the repository's Vercel configuration.
+2. Set the required database connection variables and authentication secrets.
+3. Configure CORS to allow the deployed frontend origin.
+4. Confirm that the deployed backend can establish a database connection.
+5. Test authentication, request creation, donor matching, and other critical workflows.
 
-See `AI_USAGE_DISCLOSURE.md`.
+The backend is deployed using Vercel's serverless execution model. Operations that require recurring background processing should use an appropriate scheduled or external job mechanism rather than relying on a continuously running server process.
+
+### Database — TiDB Cloud
+
+TiDB Cloud provides the managed MySQL-compatible database used by the application.
+
+- Keep database credentials exclusively on the backend.
+- Apply schema migrations before deploying code that depends on new columns or tables.
+- Verify production connectivity and database permissions.
+- Maintain appropriate backups and recovery procedures.
+
+## Security and Privacy
+
+Blood Donor Network incorporates security controls intended to protect application resources and user information.
+
+- Password hashing with bcrypt.
+- JWT-based authentication.
+- Role-based access control.
+- Protected administrative operations.
+- Server-side validation and business rules.
+- Access restrictions for request-related conversations.
+- Controlled exposure of donor and requester contact information.
+
+These controls do not constitute an independent security audit. Before production use, the application should undergo further testing for authorization weaknesses, rate limiting, input validation, database security, sensitive-data exposure, and operational reliability.
+
+## Medical Disclaimer
+
+Blood Donor Network is a donor coordination platform, not a medical diagnosis or transfusion decision system.
+
+Matching results identify potential donors based on configured application rules. They do not guarantee clinical compatibility or donor eligibility. Blood grouping, crossmatching, donor screening, and transfusion decisions must be confirmed by qualified medical professionals following applicable clinical procedures.
+
+## Version 1.0.0
+
+**Blood Donor Network v1.0.0 — Initial Formal Release**
+
+Version 1.0.0 establishes the first formal release of the application's core donor coordination workflows, including donor management, emergency blood requests, potential donor matching, verification, commitment tracking, and in-app communication.
+
+This release provides a foundation for continued improvements in reliability, security, usability, testing, and deployment.
+
+For release details, visit the [GitHub Releases page](https://github.com/Anum-shahzad/Blood-Donor-Network/releases).
+
+## Author
+
+**Anum Shahzad**
+
+Software Engineering Project  
+Aror University, Sukkur
+
+- **GitHub:** [Anum-shahzad](https://github.com/Anum-shahzad)
+- **Repository:** [Blood Donor Network](https://github.com/Anum-shahzad/Blood-Donor-Network)
+- **Live Application:** [Open Blood Donor Network](https://blood-donor-network-gilt.vercel.app/)
+
+---
+
+<p align="center">
+  <strong>Making blood donor discovery and emergency coordination more organized.</strong>
+  <br>
+  Built with the goal of helping people connect when time matters.
+</p>
