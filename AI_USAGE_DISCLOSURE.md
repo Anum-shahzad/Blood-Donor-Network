@@ -1,8 +1,10 @@
 # AI Usage Disclosure
 
 **Project:** Blood Donor & Emergency Request Network
+
 **Team:** Anum Shahzad , Saba Parveen , Hamza Noor
-**AI tool used:** Claude (Anthropic),Chatgpt
+
+**AI tool used:** Claude (Anthropic), Chatgpt
 
 ## What AI was used for
 
@@ -26,23 +28,21 @@
 
 ## What the team did itself
 
-[Fill in honestly — this section needs your own words, not Claude's. Some
-prompts to answer:]
+Although we used AI for coding, we were involved in planning the project, making decisions, and deciding which features we wanted to include and how the application should look and work.
 
-- Which parts of the code did you read and understand well enough to
-  explain in front of the class? Which parts are you still fuzzy on?
-- What decisions did you make yourself (scope cuts, what to prioritize
-  each day, what to skip) versus accept from Claude's recommendation?
-- Did you modify, reject, or push back on anything Claude suggested? What
-  and why?
-- Who on the team did what — did everyone review the AI-generated code,
-  or did one person drive it while others focused on other deliverables
-  (demo video, disclosure, testing the live site)?
-- What did you personally verify by hand (running the self-check scripts
-  yourself, testing the live deployment, checking the database tables)
-  rather than just trusting that it worked?
+**Deployment**: We decided to use Railway for backend deployment initially. When the free trial ended and the backend became inactive, I decided to move to Vercel for backend deployment and TiDB Cloud for the database.
 
-## Known limitations we're aware of
+**Anonymous Chat**: We proposed adding anonymous in-website chat to help protect users' privacy while allowing them to communicate through the platform.
 
-(Copy relevant lines from the README's "Known limitations" section, and
-add anything else the team noticed while testing that isn't there yet.)
+**Request Evidence**: We proposed allowing users to provide evidence with blood requests to support request credibility.
+
+**Donor Trust Levels**: We proposed a donor trust-level system inspired by the reputation system used on Fiverr, with the aim of helping users assess donor reliability.
+
+**UI/UX Design**: Our team made the visual design decisions, including the color palette, layout, interface structure, and overall user experience.
+
+We used AI to help translate these decisions and ideas into working software. we acknowledge that we did not manually write the source code independently and relied on AI for code generation and assistance.
+## Final Note
+
+We acknowledge that AI played a major role in writing the code for our project. Our contribution was mainly in planning, decision-making, feature ideas, design choices, and guiding the development process. We understand that we are responsible for our final project and should be able to explain its main features and the decisions behind them.
+
+
