@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch, apiUpload } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import Autocomplete from '../components/Autocomplete.jsx';
 import RequestEvidencePanel, { checkEvidenceFiles, DEFAULT_EVIDENCE_LIMITS } from '../components/RequestEvidencePanel.jsx';
 import {
   DropletIcon,
@@ -20,7 +21,8 @@ import {
   AlertCircleIcon,
   CheckCircleIcon,
 } from '../components/icons.jsx';
-import { formatDateTime, formatDate, humanizeStatus, localInputToIso, nowForLocalInput } from '../lib/format.js';
+import { formatDateTime, formatDate, humanizeStatus, localInputToIso, nowForLocalInput, formatLocalInputClear } from '../lib/format.js';
+import { suggestHospitals, suggestDiagnoses, hasHospitalsForCity } from '../lib/suggestions.js';
 
 const REFRESH_MS = 25 * 1000;
 
@@ -187,6 +189,21 @@ export default function RequesterDashboard() {
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
+
+  // Autocomplete suggestions: hospitals follow the selected city.
+  const hospitalSuggestions = useMemo(
+    () => suggestHospitals(form.city, form.hospital_name),
+    [form.city, form.hospital_name]
+  );
+  const diagnosisSuggestions = useMemo(
+    () => suggestDiagnoses(form.patient_case),
+    [form.patient_case]
+  );
+  const hospitalEmptyMessage = !form.city.trim()
+    ? 'Enter a city to see hospital suggestions.'
+    : !hasHospitalsForCity(form.city)
+      ? `No hospital suggestions for ${form.city.trim()}. You can type the hospital name.`
+      : `No matching hospitals in ${form.city.trim()}. You can type the name manually.`;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -542,11 +559,13 @@ export default function RequesterDashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <label className="field">
                   Hospital / Center
-                  <input
-                    type="text"
+                  <Autocomplete
+                    ariaLabel="Hospital / Center"
                     placeholder="e.g. City General Hospital"
                     value={form.hospital_name}
-                    onChange={update('hospital_name')}
+                    onChange={(v) => setForm((f) => ({ ...f, hospital_name: v }))}
+                    items={hospitalSuggestions}
+                    emptyMessage={hospitalEmptyMessage}
                     required
                   />
                 </label>
@@ -565,11 +584,12 @@ export default function RequesterDashboard() {
 
               <label className="field">
                 Patient Medical Case / Diagnosis
-                <input
-                  type="text"
+                <Autocomplete
+                  ariaLabel="Patient Medical Case / Diagnosis"
                   placeholder="e.g. Emergency C-Section, Thalassemia Major Child, Trauma Ward"
                   value={form.patient_case}
-                  onChange={update('patient_case')}
+                  onChange={(v) => setForm((f) => ({ ...f, patient_case: v }))}
+                  items={diagnosisSuggestions}
                   required
                 />
               </label>
@@ -609,7 +629,7 @@ export default function RequesterDashboard() {
                       className={`segmented-option${form.urgency === level ? ' is-active' : ''}`}
                       onClick={() => setForm((f) => ({ ...f, urgency: level }))}
                     >
-                      {level === 'critical' ? 'Critical (< 2h)' : level === 'high' ? 'High (< 6h)' : level === 'medium' ? 'Medium' : 'Low'}
+                      {level === 'critical' ? 'Critical' : level === 'high' ? 'High' : level === 'medium' ? 'Medium' : 'Low'}
                     </button>
                   ))}
                 </div>
@@ -623,6 +643,10 @@ export default function RequesterDashboard() {
                   value={form.required_by}
                   onChange={update('required_by')}
                 />
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', fontWeight: 400 }}>
+                  Format: 16 Oct 2026
+                  {form.required_by && <> &middot; Selected: {formatLocalInputClear(form.required_by)}</>}
+                </span>
               </label>
 
               <label className="field">

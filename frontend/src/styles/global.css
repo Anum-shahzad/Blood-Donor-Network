@@ -1762,3 +1762,32 @@ button, input, select {
 @media (prefers-reduced-motion: reduce) {
   .sidebar { transition: none; }
 }
+
+/* Autocomplete suggestion list (request form: hospital, diagnosis) */
+.autocomplete { position: relative; display: flex; flex-direction: column; }
+.autocomplete-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  font-weight: 400;
+}
+.autocomplete-option {
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.autocomplete-option:hover,
+.autocomplete-option.is-active { background: var(--accent-light); color: var(--primary); }
+.autocomplete-empty { padding: 0.6rem 0.75rem; font-size: 0.8rem; color: var(--ink-muted); }

@@ -1,0 +1,69 @@
+{
+  "Karachi": [
+    "Aga Khan University Hospital",
+    "Abbasi Shaheed Hospital",
+    "Civil Hospital Karachi",
+    "Dow University Hospital",
+    "Hamdard University Hospital",
+    "Indus Hospital",
+    "Jinnah Postgraduate Medical Centre (JPMC)",
+    "Liaquat National Hospital",
+    "Memon Medical Institute Hospital",
+    "National Institute of Cardiovascular Diseases (NICVD)",
+    "National Institute of Child Health (NICH)",
+    "Patel Hospital",
+    "Saifee Hospital",
+    "South City Hospital",
+    "Ziauddin Hospital"
+  ],
+  "Lahore": [
+    "Children's Hospital & Institute of Child Health",
+    "Doctors Hospital",
+    "Ganga Ram Hospital",
+    "Hameed Latif Hospital",
+    "Jinnah Hospital",
+    "Lahore General Hospital",
+    "Mayo Hospital",
+    "Services Hospital",
+    "Sheikh Zayed Hospital",
+    "Shaukat Khanum Memorial Cancer Hospital"
+  ],
+  "Islamabad": [
+    "Pakistan Institute of Medical Sciences (PIMS)",
+    "Federal Government Polyclinic Hospital",
+    "Shifa International Hospital"
+  ],
+  "Rawalpindi": [
+    "Benazir Bhutto Hospital",
+    "Combined Military Hospital (CMH)",
+    "Holy Family Hospital",
+    "Rawalpindi Institute of Cardiology"
+  ],
+  "Peshawar": [
+    "Hayatabad Medical Complex",
+    "Khyber Teaching Hospital",
+    "Lady Reading Hospital"
+  ],
+  "Quetta": [
+    "Bolan Medical Complex Hospital",
+    "Civil Hospital Quetta",
+    "Sandeman Provincial Hospital"
+  ],
+  "Multan": [
+    "Nishtar Hospital"
+  ],
+  "Faisalabad": [
+    "Allied Hospital"
+  ],
+  "Hyderabad": [
+    "Isra University Hospital",
+    "Liaquat University Hospital"
+  ],
+  "Sukkur": [
+    "Civil Hospital Sukkur",
+    "Ghulam Muhammad Mahar Medical College Teaching Hospital"
+  ],
+  "Larkana": [
+    "Chandka Medical College Hospital"
+  ]
+}

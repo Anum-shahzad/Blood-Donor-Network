@@ -55,3 +55,17 @@ export function todayForDateInput() {
 export function humanizeStatus(status) {
   return String(status || '').replace(/_/g, ' ');
 }
+
+// Unambiguous display of a datetime-local value ("2026-10-16T21:30" ->
+// "16 Oct 2026, 09:30 PM"). Display only: the value sent to the server is
+// still produced by localInputToIso. Parsed by hand to avoid time zone shifts.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function formatLocalInputClear(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(value || '');
+  if (!m) return '';
+  const [, y, mo, d, hh, mm] = m;
+  const date = `${Number(d)} ${MONTHS[Number(mo) - 1]} ${y}`;
+  if (hh === undefined) return date;
+  const h = Number(hh);
+  return `${date}, ${String(h % 12 || 12).padStart(2, '0')}:${mm} ${h < 12 ? 'AM' : 'PM'}`;
+}
