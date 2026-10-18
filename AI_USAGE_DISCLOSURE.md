@@ -1,15 +1,15 @@
 # AI Usage Disclosure
 
 **Project:** Blood Donor & Emergency Request Network
-**Team:** [fill in team member names]
-**AI tool used:** Claude (Anthropic)
+**Team:** Anum Shahzad , Saba Parveen , Hamza Noor
+**AI tool used:** Claude (Anthropic),Chatgpt
 
 ## What AI was used for
 
 - **Architecture and planning**: proposing the tech stack (React/Vite,
   Node/Express, MySQL, JWT+bcrypt), the database schema, the simplified
   request lifecycle, and the role scope (donor/requester/admin, no
-  separate hospital role), given the one-week timeline.
+  separate hospital role),  
 - **Boilerplate and setup**: project scaffolding, Express server setup,
   Vite/React setup, `.env` structure, `vercel.json` SPA rewrite rule.
 - **Coding**: authentication (bcrypt hashing, JWT issuance/verification),
@@ -20,8 +20,7 @@
 - **Testing**: wrote and ran plain-Node self-check scripts for password
   hashing/JWT round-tripping, blood-type compatibility across all 8 groups,
   and the donor ranking algorithm (cooldown exclusion, score ordering).
-- **Debugging**: diagnosed and fixed a Railway cross-project variable
-  reference issue, a multi-statement SQL execution failure when loading
+- **Debugging**: diagnosed and fixed a multi-statement SQL execution failure when loading
   the schema, and a Vercel SPA routing 404 on direct/refreshed URLs.
 - **Documentation**: this README and this disclosure.
 
