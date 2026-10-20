@@ -5,7 +5,8 @@ import { validateRequestPayload, MANUAL_REQUEST_STATUSES } from '../utils/valida
 import { closeRequestByRequester, defaultTtlHours } from '../services/requestLifecycle.js';
 import { getCompatibleDonorGroups } from '../services/matching/compatibility.js';
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
-import { acceptRequest, declineRequest } from '../services/donorCommitment.js';
+import { acceptRequest, declineRequest, markCommitmentUnsuccessful } from '../services/donorCommitment.js';
+import { UNIT_PROGRESS_COLUMNS_SQL, withUnitProgress } from '../services/requestUnits.js';
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
 
@@ -79,18 +80,48 @@ router.post('/', authorize('requester'), async (req, res, next) => {
 router.get('/mine', authorize('requester'), async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, blood_group, units_needed, hospital_name, city, urgency,
-              required_by, status, is_verified, created_at,
-              patient_case, contact_phone, attendant_name, prescription_slip
-       FROM requests
-       WHERE requester_id = ?
-       ORDER BY created_at DESC`,
+      `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
+              r.required_by, r.status, r.is_verified, r.created_at,
+              r.patient_case, r.contact_phone, r.attendant_name, r.prescription_slip,
+              ${UNIT_PROGRESS_COLUMNS_SQL}
+       FROM requests r
+       WHERE r.requester_id = ?
+       ORDER BY r.created_at DESC`,
       [req.user.id]
     );
 
+    // Each donor's commitment and confirmed units, per request. Names only —
+    // no contact details are exposed here.
+    const commitmentsByRequest = new Map();
+    if (rows.length > 0) {
+      const [commitRows] = await pool.query(
+        `SELECT rr.request_id, rr.donor_id, rr.status, rr.committed_units, rr.confirmed_units,
+                u.name AS donor_name, dp.current_status AS donor_state
+           FROM request_responses rr
+           JOIN users u ON u.id = rr.donor_id
+           LEFT JOIN donor_profiles dp ON dp.user_id = rr.donor_id
+          WHERE rr.request_id IN (?) AND rr.status IN ('accepted', 'donated', 'failed')
+          ORDER BY rr.responded_at ASC, rr.id ASC`,
+        [rows.map((r) => r.id)]
+      );
+      for (const c of commitRows) {
+        const list = commitmentsByRequest.get(c.request_id) || [];
+        list.push({
+          donor_id: c.donor_id,
+          donor_name: c.donor_name,
+          status: c.status,
+          donor_state: c.status === 'accepted' ? c.donor_state : null,
+          committed_units: Number(c.committed_units) || 0,
+          confirmed_units: Number(c.confirmed_units) || 0,
+        });
+        commitmentsByRequest.set(c.request_id, list);
+      }
+    }
+
     // Compute matched donor counts for active requests
     const enriched = await Promise.all(
-      rows.map(async (r) => {
+      rows.map(withUnitProgress).map(async (r) => {
+        r = { ...r, commitments: commitmentsByRequest.get(r.id) || [] };
         try {
           const compatibleGroups = getCompatibleDonorGroups(r.blood_group);
           const [donors] = await pool.query(
@@ -115,19 +146,22 @@ router.get('/mine', authorize('requester'), async (req, res, next) => {
 // GET /api/requests/archive — history of closed requests (fulfilled, cancelled, expired) with summary stats
 router.get('/archive', authorize('requester'), async (req, res, next) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, blood_group, units_needed, hospital_name, city, urgency,
-              required_by, status, is_verified, created_at,
-              patient_case, contact_phone, attendant_name, prescription_slip
-       FROM requests
-       WHERE requester_id = ?
-         AND status IN ('fulfilled', 'cancelled', 'expired')
-       ORDER BY created_at DESC`,
+    const [rawRows] = await pool.query(
+      `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
+              r.required_by, r.status, r.is_verified, r.created_at,
+              r.patient_case, r.contact_phone, r.attendant_name, r.prescription_slip,
+              ${UNIT_PROGRESS_COLUMNS_SQL}
+       FROM requests r
+       WHERE r.requester_id = ?
+         AND r.status IN ('fulfilled', 'cancelled', 'expired')
+       ORDER BY r.created_at DESC`,
       [req.user.id]
     );
+    const rows = rawRows.map(withUnitProgress);
 
     const fulfilled = rows.filter((r) => r.status === 'fulfilled');
-    const totalUnits = fulfilled.reduce((acc, r) => acc + (Number(r.units_needed) || 0), 0);
+    // Units actually received = confirmed donated units on every closed request.
+    const totalUnits = rows.reduce((acc, r) => acc + (Number(r.units_donated) || 0), 0);
     const fulfillmentRate = rows.length > 0 ? Math.round((fulfilled.length / rows.length) * 100) : 0;
 
     res.json({
@@ -312,6 +346,23 @@ router.post('/:id/alert/:donorId', authorize('requester'), async (req, res, next
   }
 });
 
+// POST /api/requests/:id/commitments/:donorId/unsuccessful — requester reports
+// that a committed donor's donation did not happen or did not succeed. The
+// donor's promised units become available to other donors again.
+router.post('/:id/commitments/:donorId/unsuccessful', authorize('requester'), async (req, res, next) => {
+  try {
+    const requestId = parseIdParam(req.params.id);
+    const donorId = parseIdParam(req.params.donorId);
+    if (requestId === null || donorId === null) {
+      return res.status(400).json({ error: 'Invalid parameters' });
+    }
+    const result = await markCommitmentUnsuccessful({ requestId, donorId, requesterId: req.user.id });
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 function parseRequestId(req, res) {
   const requestId = Number(req.params.id);
   if (!Number.isInteger(requestId)) {
@@ -327,7 +378,8 @@ router.post('/:id/accept', authorize('donor'), async (req, res, next) => {
     const requestId = parseRequestId(req, res);
     if (requestId === null) return;
 
-    const result = await acceptRequest(req.user.id, requestId);
+    // units is optional (default 1, max 2): how many units this donor promises.
+    const result = await acceptRequest(req.user.id, requestId, { units: req.body?.units });
     res.json({ status: 'ok', ...result });
   } catch (err) {
     next(err);

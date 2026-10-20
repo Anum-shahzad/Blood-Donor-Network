@@ -43,14 +43,26 @@ if (!canDonorAccept(null).ok) {
 
 // --- canRequestAcceptDonor -------------------------------------------------
 
-for (const status of ['verified', 'matched']) {
+for (const status of ['verified', 'matched', 'donor_accepted']) {
   if (canRequestAcceptDonor({ status }).ok) pass(`request in status=${status} is open for accept`);
   else fail(`request in status=${status} was WRONGLY closed for accept`);
 }
 
-for (const status of ['pending', 'donor_accepted', 'fulfilled', 'expired', 'cancelled']) {
+for (const status of ['pending', 'fulfilled', 'expired', 'cancelled']) {
   if (!canRequestAcceptDonor({ status }).ok) pass(`request in status=${status} correctly rejects a new accept`);
   else fail(`request in status=${status} WRONGLY accepted a donor`);
+}
+
+if (canRequestAcceptDonor({ status: 'donor_accepted' }, { open: 2 }).ok) {
+  pass('partially committed request still accepts donors while units are open');
+} else {
+  fail('partially committed request was WRONGLY closed to donors');
+}
+
+if (!canRequestAcceptDonor({ status: 'donor_accepted' }, { open: 0 }).ok) {
+  pass('fully committed request rejects a new accept');
+} else {
+  fail('fully committed request WRONGLY accepted another donor');
 }
 
 if (!canRequestAcceptDonor(null).ok) {

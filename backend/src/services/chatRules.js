@@ -41,16 +41,25 @@ export function canReadConversation(conversation, userId) {
 
 // Whether the thread currently accepts new messages (independent of who is
 // asking) — the frontend uses this to show or hide the input box.
-export function isChatOpen(request) {
-  return Boolean(request) && CHAT_OPEN_REQUEST_STATUSES.includes(request.status);
+//
+// A request can have several donors, each with their own thread. A thread is
+// open only while the request is live AND that thread's donor still holds an
+// active ('accepted') commitment — a donor who cancelled, or whose donation was
+// unsuccessful, goes read-only even while other donors keep the request open.
+export function isChatOpen(request, donorCommitmentActive = true) {
+  return (
+    Boolean(request) &&
+    CHAT_OPEN_REQUEST_STATUSES.includes(request.status) &&
+    Boolean(donorCommitmentActive)
+  );
 }
 
 // Writing: participant AND chat still open.
-export function canSendMessage(conversation, request, userId) {
+export function canSendMessage(conversation, request, userId, donorCommitmentActive = true) {
   const read = canReadConversation(conversation, userId);
   if (!read.ok) return read;
 
-  if (!isChatOpen(request)) {
+  if (!isChatOpen(request, donorCommitmentActive)) {
     return {
       ok: false,
       status: 409,

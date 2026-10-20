@@ -18,7 +18,8 @@ function normalize(data) {
       const deadline = r.required_by ? new Date(r.required_by).getTime() : NaN;
       const created = new Date(r.created_at).getTime();
       const urgency = URGENCY_RANK[r.urgency] !== undefined ? r.urgency : 'medium';
-      const units = Number(r.units_needed) || 1;
+      // Units still outstanding (required minus confirmed donated).
+      const units = Number(r.units_remaining ?? r.units_needed) || 1;
       return {
         id: r.id,
         bloodType: r.blood_group,

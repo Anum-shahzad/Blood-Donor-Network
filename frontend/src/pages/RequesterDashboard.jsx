@@ -50,6 +50,18 @@ function stateClassFor(request) {
   return 'state-pending';
 }
 
+// Status text that reflects unit progress: a live request with some units
+// donated is "Partially fulfilled"; one with donors committed says so.
+function requestStatusLabel(request) {
+  if (!CLOSED_STATUSES.includes(request.status) && request.status !== 'pending') {
+    const donated = Number(request.units_donated) || 0;
+    const required = Number(request.units_required ?? request.units_needed) || 0;
+    if (donated > 0 && donated < required) return 'Partially fulfilled';
+    if (request.status === 'donor_accepted') return 'Donors committed';
+  }
+  return humanizeStatus(request.status);
+}
+
 function urgencyBadgeClass(urgency) {
   if (urgency === 'critical' || urgency === 'high') return 'badge-red';
   if (urgency === 'medium') return 'badge-amber';
@@ -178,6 +190,19 @@ export default function RequesterDashboard() {
     try {
       const res = await apiPost(`/api/requests/${requestId}/alert/${donorId}`, {});
       setAlertSuccess(res.message || 'Emergency alert dispatched to donor.');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function markDonorUnsuccessful(requestId, donorId, donorName) {
+    setError('');
+    if (!window.confirm(`Mark ${donorName}'s donation as unsuccessful? Their committed units will be opened up for other donors again.`)) return;
+    try {
+      await apiPost(`/api/requests/${requestId}/commitments/${donorId}/unsuccessful`, {});
+      setSuccessMsg(`${donorName}'s donation was marked unsuccessful. Those units are open to other donors again.`);
+      setOpenChats((c) => ({ ...c, [`${requestId}:${donorId}`]: false }));
+      loadRequests();
     } catch (err) {
       setError(err.message);
     }
@@ -345,7 +370,7 @@ export default function RequesterDashboard() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <strong style={{ display: 'block', fontSize: '0.92rem' }}>{r.patient_case || `Emergency Request #${r.id}`}</strong>
                       <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                        {r.hospital_name}{r.city ? `, ${r.city}` : ''} &middot; {r.units_needed} unit{r.units_needed > 1 ? 's' : ''} &middot; {r.matched_donors_count || 0} nearby donors
+                        {r.hospital_name}{r.city ? `, ${r.city}` : ''} &middot; {r.units_donated ?? 0}/{r.units_needed} unit{r.units_needed > 1 ? 's' : ''} donated &middot; {r.matched_donors_count || 0} nearby donors
                       </span>
                     </div>
                     <span className={`badge ${r.is_verified ? 'badge-teal' : 'badge-amber'}`}>
@@ -404,7 +429,7 @@ export default function RequesterDashboard() {
                           {r.patient_case || `Emergency Request #${r.id}`}
                         </strong>
                         <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-                          {r.hospital_name}, {r.city} &bull; {r.units_needed} Unit(s) Needed
+                          {r.hospital_name}, {r.city} &bull; {r.units_required ?? r.units_needed} Unit(s) Required
                         </span>
                       </div>
                     </div>
@@ -432,7 +457,7 @@ export default function RequesterDashboard() {
                   >
                     <div>
                       <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>LIFECYCLE STATUS</span>
-                      <strong>{humanizeStatus(r.status)}</strong>
+                      <strong>{requestStatusLabel(r)}</strong>
                     </div>
                     <div>
                       <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>MATCHED DONORS RADAR</span>
@@ -456,6 +481,85 @@ export default function RequesterDashboard() {
                     </p>
                   )}
 
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                      gap: '0.75rem',
+                      background: 'var(--paper)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.65rem 0.85rem',
+                      margin: '0 0 0.75rem',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>REQUIRED</span>
+                      <strong>{r.units_required ?? r.units_needed}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>DONATED</span>
+                      <strong style={{ color: '#15803d' }}>{r.units_donated ?? 0}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>COMMITTED (NOT YET DONATED)</span>
+                      <strong style={{ color: 'var(--amber)' }}>{r.units_committed ?? 0}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.72rem' }}>REMAINING</span>
+                      <strong style={{ color: 'var(--primary)' }}>{r.units_remaining ?? r.units_needed}</strong>
+                    </div>
+                  </div>
+
+                  {(r.commitments || []).length > 0 && (
+                    <div className="stack" style={{ gap: '0.45rem', margin: '0 0 0.75rem' }}>
+                      {r.commitments.map((c) => (
+                        <div
+                          key={c.donor_id}
+                          style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', fontSize: '0.84rem' }}
+                        >
+                          <strong style={{ flex: 1, minWidth: 120 }}>{c.donor_name}</strong>
+                          <span className={`badge ${c.status === 'donated' ? 'badge-teal' : c.status === 'failed' ? 'badge-neutral' : 'badge-amber'}`}>
+                            {c.status === 'donated'
+                              ? `Donated ${c.confirmed_units} unit(s)`
+                              : c.status === 'failed'
+                                ? 'Donation unsuccessful'
+                                : `Committed ${c.committed_units} unit(s) \u2014 not yet donated`}
+                          </span>
+                          {c.status === 'accepted' && (
+                            <>
+                              <button
+                                onClick={() => toggleChat(`${r.id}:${c.donor_id}`)}
+                                className="btn btn-secondary"
+                                style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem' }}
+                              >
+                                {openChats[`${r.id}:${c.donor_id}`] ? 'Hide Chat' : 'Chat'}
+                              </button>
+                              <button
+                                onClick={() => markDonorUnsuccessful(r.id, c.donor_id, c.donor_name)}
+                                className="btn btn-text"
+                                style={{ fontSize: '0.8rem', color: 'var(--primary)' }}
+                              >
+                                Mark unsuccessful
+                              </button>
+                            </>
+                          )}
+                          {c.status === 'accepted' && openChats[`${r.id}:${c.donor_id}`] && (
+                            <div style={{ flexBasis: '100%', marginTop: '0.4rem' }}>
+                              <ChatPanel
+                                requestId={r.id}
+                                donorId={c.donor_id}
+                                currentUserId={user.id}
+                                onClose={() => toggleChat(`${r.id}:${c.donor_id}`)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <RequestEvidencePanel
                     requestId={r.id}
                     evidence={evidenceByRequest[r.id]}
@@ -476,18 +580,10 @@ export default function RequesterDashboard() {
                       <RadarIcon size={14} /> View Matched Donors Radar
                     </button>
 
-                    {r.status === 'donor_accepted' && (
-                      <button
-                        onClick={() => toggleChat(r.id)}
-                        className="btn btn-primary"
-                        style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem' }}
-                      >
-                        {openChats[r.id] ? 'Hide Donor Chat' : 'Chat with Committed Donor'}
-                      </button>
-                    )}
-
                     <button
                       onClick={() => updateStatus(r.id, 'fulfilled')}
+                      disabled={(r.units_donated ?? 0) < (r.units_required ?? r.units_needed)}
+                      title={(r.units_donated ?? 0) < (r.units_required ?? r.units_needed) ? 'Available once all required units have a confirmed donation' : ''}
                       className="btn btn-secondary"
                       style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem', borderColor: 'var(--success)', color: '#15803d' }}
                     >
@@ -503,15 +599,6 @@ export default function RequesterDashboard() {
                     </button>
                   </div>
 
-                  {r.status === 'donor_accepted' && openChats[r.id] && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <ChatPanel
-                        requestId={r.id}
-                        currentUserId={user.id}
-                        onClose={() => toggleChat(r.id)}
-                      />
-                    </div>
-                  )}
                 </div>
               );
             })

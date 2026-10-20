@@ -7,7 +7,8 @@ import { getCompatibleDonorGroups } from '../services/matching/compatibility.js'
 import { isEligibleByRecency } from '../services/matching/donorMatching.js';
 import { computeCooldownInfo } from '../services/matching/donorState.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
-import { cancelCommitment, advanceCommitmentStep, recordDonation } from '../services/donorCommitment.js';
+import { cancelCommitment, advanceCommitmentStep, recordDonation, reportDonationUnsuccessful } from '../services/donorCommitment.js';
+import { UNIT_PROGRESS_COLUMNS_SQL, OPEN_UNITS_CONDITION_SQL, withUnitProgress } from '../services/requestUnits.js';
 
 const router = Router();
 
@@ -75,13 +76,16 @@ router.get('/me', async (req, res, next) => {
                   ELSE NULL
                 END AS contact_phone,
                 r.attendant_name,
+                (SELECT rr2.committed_units FROM request_responses rr2
+                  WHERE rr2.request_id = r.id AND rr2.donor_id = ? AND rr2.status = 'accepted') AS my_committed_units,
+                ${UNIT_PROGRESS_COLUMNS_SQL},
                 u.name AS requester_name
          FROM requests r
          JOIN users u ON u.id = r.requester_id
          WHERE r.id = ?`,
-        [req.user.id, donor.committed_request_id]
+        [req.user.id, req.user.id, donor.committed_request_id]
       );
-      committedRequest = reqRows[0] || null;
+      committedRequest = reqRows[0] ? withUnitProgress(reqRows[0]) : null;
     }
 
     const verification = (await getVerificationSummaries([req.user.id])).get(Number(req.user.id));
@@ -127,16 +131,18 @@ router.get('/matches', async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
               r.required_by, r.status, r.created_at, r.patient_case,
-              r.attendant_name, r.prescription_slip, u.name AS requester_name
+              r.attendant_name, r.prescription_slip, u.name AS requester_name,
+              ${UNIT_PROGRESS_COLUMNS_SQL}
        FROM requests r
        JOIN users u ON u.id = r.requester_id
        WHERE r.is_verified = TRUE
-         AND r.status IN ('verified', 'matched')
+         AND r.status IN ('verified', 'matched', 'donor_accepted')
+         AND ${OPEN_UNITS_CONDITION_SQL}
          AND ${EFFECTIVE_EXPIRY_SQL} > NOW()
          AND NOT EXISTS (
            SELECT 1 FROM request_responses rr
            WHERE rr.request_id = r.id AND rr.donor_id = ?
-             AND rr.status IN ('declined', 'accepted')
+             AND rr.status IN ('declined', 'accepted', 'donated', 'failed', 'cancelled')
          )
        ORDER BY
          FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
@@ -148,7 +154,7 @@ router.get('/matches', async (req, res, next) => {
     // blood group and outside the post-donation cooldown, so the list never
     // shows a request the donor would be refused on accept.
     const matches = isEligibleByRecency(donorProfile.last_donation_date)
-      ? rows.filter((r) => getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group))
+      ? rows.map(withUnitProgress).filter((r) => getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group))
       : [];
 
     res.json({ matches, match_count: matches.length });
@@ -223,6 +229,17 @@ router.patch('/me/commitment/step', async (req, res, next) => {
 router.post('/me/commitment/cancel', async (req, res, next) => {
   try {
     const result = await cancelCommitment(req.user.id);
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/donors/me/commitment/unsuccessful — report that your donation did not
+// happen or did not succeed; your promised units are released to other donors
+router.post('/me/commitment/unsuccessful', async (req, res, next) => {
+  try {
+    const result = await reportDonationUnsuccessful(req.user.id);
     res.json({ status: 'ok', ...result });
   } catch (err) {
     next(err);

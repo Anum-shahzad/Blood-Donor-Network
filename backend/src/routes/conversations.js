@@ -24,13 +24,22 @@ function parseId(req, res, param) {
 }
 
 // GET /api/conversations/:requestId — get-or-create the conversation for a
-// request that has an accepted donor. 404 for anyone who isn't a party to it.
+// request and donor (the caller, or ?donor_id= for the requester). 404 for anyone who isn't a party to it.
 router.get('/:requestId', async (req, res, next) => {
   try {
     const requestId = parseId(req, res, 'requestId');
     if (requestId === null) return;
 
-    const conversation = await getOrCreateConversation(req.user.id, requestId);
+    // Requesters may name which committed donor's thread they want.
+    let donorId = null;
+    if (req.query.donor_id !== undefined) {
+      donorId = Number(req.query.donor_id);
+      if (!Number.isInteger(donorId) || donorId < 1) {
+        return res.status(400).json({ error: 'Invalid donor_id' });
+      }
+    }
+
+    const conversation = await getOrCreateConversation(req.user.id, requestId, donorId);
     res.json(conversation);
   } catch (err) {
     next(err);

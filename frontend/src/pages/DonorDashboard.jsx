@@ -66,6 +66,7 @@ export default function DonorDashboard() {
   const [glow, setGlow] = useState(false);
   const [actingOn, setActingOn] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [reportingUnsuccessful, setReportingUnsuccessful] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [editing, setEditing] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
@@ -203,13 +204,29 @@ export default function DonorDashboard() {
     setSuccessMsg('');
     try {
       await apiPost('/api/donors/me/commitment/cancel', {});
-      setSuccessMsg('Commitment cancelled. The request has been reopened for other donors.');
+      setSuccessMsg('Commitment cancelled. Your units are open for other donors again.');
       loadAll();
       setTab('tab-feed');
     } catch (err) {
       setError(err.message);
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function reportUnsuccessful() {
+    setReportingUnsuccessful(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPost('/api/donors/me/commitment/unsuccessful', {});
+      setSuccessMsg('Your donation was marked unsuccessful. Your units are open for other donors again.');
+      loadAll();
+      setTab('tab-feed');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReportingUnsuccessful(false);
     }
   }
 
@@ -445,7 +462,7 @@ export default function DonorDashboard() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <strong style={{ display: 'block', fontSize: '0.92rem' }}>{m.patient_case || 'Urgent Blood Transfusion'}</strong>
                       <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                        {m.hospital_name}{m.city ? `, ${m.city}` : ''} &middot; {m.units_needed} unit{m.units_needed > 1 ? 's' : ''}
+                        {m.hospital_name}{m.city ? `, ${m.city}` : ''} &middot; {m.units_open ?? m.units_needed} of {m.units_needed} unit{m.units_needed > 1 ? 's' : ''} still open
                       </span>
                     </div>
                     <span className={`badge ${URGENCY_BADGE[m.urgency] || 'badge-neutral'}`}>{m.urgency}</span>
@@ -588,7 +605,14 @@ export default function DonorDashboard() {
                     >
                       <div>
                         <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>UNITS NEEDED</span>
-                        <strong style={{ color: 'var(--primary)' }}>{m.units_needed} Unit{m.units_needed > 1 ? 's' : ''}</strong>
+                        <strong style={{ color: 'var(--primary)' }}>
+                          {m.units_open ?? m.units_needed} of {m.units_needed} Unit{m.units_needed > 1 ? 's' : ''} still open
+                        </strong>
+                        {Number(m.units_donated) > 0 && (
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
+                            {m.units_donated} already donated
+                          </span>
+                        )}
                       </div>
                       <div>
                         <span style={{ color: 'var(--ink-muted)', display: 'block', fontSize: '0.7rem' }}>LOCATION</span>
@@ -842,10 +866,22 @@ export default function DonorDashboard() {
                     Blood Request Case
                   </span>
                   <strong style={{ fontSize: '0.95rem', color: 'var(--primary)' }}>
-                    {profile?.committed_request?.units_needed || 1} Unit(s) {profile?.committed_request?.blood_group || profile?.blood_group}
+                    {profile?.committed_request?.units_required ?? profile?.committed_request?.units_needed ?? 1} Unit(s) {profile?.committed_request?.blood_group || profile?.blood_group}
                   </strong>
                   <span style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', display: 'block' }}>
                     {profile?.committed_request?.patient_case || 'Urgent Surgery Case'}
+                  </span>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--ink-muted)', display: 'block', marginBottom: '0.2rem' }}>
+                    Unit Progress
+                  </span>
+                  <strong style={{ fontSize: '0.95rem' }}>
+                    {profile?.committed_request?.units_donated ?? 0} donated &middot; {profile?.committed_request?.units_remaining ?? profile?.committed_request?.units_needed ?? 1} remaining
+                  </strong>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', display: 'block' }}>
+                    Required: {profile?.committed_request?.units_required ?? profile?.committed_request?.units_needed ?? 1} &middot; Your commitment: {profile?.committed_request?.my_committed_units ?? 1} unit(s), not yet donated
                   </span>
                 </div>
               </div>
@@ -911,6 +947,21 @@ export default function DonorDashboard() {
                 >
                   {showChat ? 'Hide Chat' : 'Chat with Requester'}
                 </button>
+
+                {(status === 'EN_ROUTE' || status === 'ARRIVED' || status === 'DONATING') && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Report that your donation did not happen or was unsuccessful? Your units will be opened up for other donors.')) {
+                        reportUnsuccessful();
+                      }
+                    }}
+                    disabled={reportingUnsuccessful}
+                    className="btn btn-text"
+                    style={{ marginLeft: 'auto', color: 'var(--primary)' }}
+                  >
+                    {reportingUnsuccessful ? 'Reporting...' : 'Donation Unsuccessful (Release my units)'}
+                  </button>
+                )}
 
                 {canCancel && (
                   <button

@@ -4,6 +4,11 @@
 // own UPDATE statements, so the concurrency guarantees below can't be
 // bypassed by a future route added elsewhere.
 //
+// A request may have several donors at once. Each donor's promise
+// (request_responses.committed_units, status 'accepted') and confirmed
+// donation (confirmed_units, status 'donated') are separate; a request is
+// fulfilled only when confirmed units reach units_needed (requestUnits.js).
+//
 // Every operation here takes out row locks (SELECT ... FOR UPDATE) inside a
 // transaction before deciding anything, so two simultaneous accept attempts
 // on the same request (or the same donor accepting two requests at once)
@@ -19,11 +24,12 @@ import {
   computeCooldownInfo,
   cooldownCutoffDate,
   requestStatusAfterAccept,
-  requestStatusAfterCommitmentCancelled,
 } from './matching/donorState.js';
 import { canDonorGiveToRecipient } from './matching/compatibility.js';
 import { isEligibleByRecency, DONATION_COOLDOWN_MONTHS } from './matching/donorMatching.js';
 import { upsertConversation } from './chatService.js';
+import { loadUnitProgress, settleRequestStatus } from './requestUnits.js';
+import { donorOutcomeAfterRelease } from './requestClosureRules.js';
 import { defaultTtlHours } from './requestLifecycle.js';
 import { validateDonationDate, daysBetween, DONATION_COOLDOWN_DAYS } from '../utils/validation.js';
 
@@ -33,13 +39,24 @@ function httpError(status, message) {
   return err;
 }
 
+// Most units one donor may promise on a single request.
+const MAX_UNITS_PER_COMMITMENT = 2;
+// Response states in which this donor may not accept the same request again.
+const NO_REACCEPT_RESPONSE_STATES = ['accepted', 'donated', 'failed'];
+
 // Donor accepts a specific request. Verifies eligibility, verifies the
-// donor is still available, verifies the request is still open, then
-// atomically commits the donor and records the response — all inside one
-// transaction so a second, simultaneous accept (by this donor on another
-// request, or by another donor on this same request) safely fails instead
-// of producing an inconsistent state.
-export async function acceptRequest(donorId, requestId) {
+// donor is still available, verifies the request is open AND still has units
+// nobody has donated or promised, then atomically commits the donor and
+// records the response — all inside one transaction. The request row lock
+// serializes every donor competing for the same units, so two simultaneous
+// accepts can never promise more units than remain, and the donor row lock
+// plus the (request_id, donor_id) unique key stop a duplicate commitment.
+export async function acceptRequest(donorId, requestId, { units = 1 } = {}) {
+  const requestedUnits = units == null || units === '' ? 1 : Number(units);
+  if (!Number.isInteger(requestedUnits) || requestedUnits < 1 || requestedUnits > MAX_UNITS_PER_COMMITMENT) {
+    throw httpError(400, `units must be a whole number between 1 and ${MAX_UNITS_PER_COMMITMENT}`);
+  }
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -53,7 +70,8 @@ export async function acceptRequest(donorId, requestId) {
     );
     const donorProfile = donorRows[0];
 
-    const requestCheck = canRequestAcceptDonor(request);
+    const progress = request ? await loadUnitProgress(conn, requestId, request.units_needed) : null;
+    const requestCheck = canRequestAcceptDonor(request, progress);
     if (!requestCheck.ok) {
       throw httpError(request ? 409 : 404, requestCheck.reason);
     }
@@ -92,17 +110,32 @@ export async function acceptRequest(donorId, requestId) {
       );
     }
 
+    // One commitment per donor per request.
+    const [existingRows] = await conn.query(
+      'SELECT status FROM request_responses WHERE request_id = ? AND donor_id = ? FOR UPDATE',
+      [requestId, donorId]
+    );
+    if (existingRows[0] && NO_REACCEPT_RESPONSE_STATES.includes(existingRows[0].status)) {
+      throw httpError(409, existingRows[0].status === 'accepted'
+        ? 'You have already accepted this request'
+        : `Your earlier response to this request is ${existingRows[0].status}, so it cannot be accepted again`);
+    }
+
+    // Never promise more than is still unallocated.
+    const committedUnits = Math.min(requestedUnits, progress.open);
     const newRequestStatus = requestStatusAfterAccept();
 
-    // Re-check the affected row count on both writes — belt-and-braces
+    // Re-check the affected row count on every write — belt-and-braces
     // against a lock somehow not covering a concurrent change, so we never
-    // report success without having actually moved both rows.
-    const [requestUpdate] = await conn.query(
-      `UPDATE requests SET status = ? WHERE id = ? AND status = ?`,
-      [newRequestStatus, requestId, request.status]
-    );
-    if (requestUpdate.affectedRows === 0) {
-      throw httpError(409, 'Request was updated by someone else — please refresh and try again');
+    // report success without having actually moved the rows.
+    if (request.status !== newRequestStatus) {
+      const [requestUpdate] = await conn.query(
+        `UPDATE requests SET status = ? WHERE id = ? AND status = ?`,
+        [newRequestStatus, requestId, request.status]
+      );
+      if (requestUpdate.affectedRows === 0) {
+        throw httpError(409, 'Request was updated by someone else — please refresh and try again');
+      }
     }
 
     const [donorUpdate] = await conn.query(
@@ -120,15 +153,16 @@ export async function acceptRequest(donorId, requestId) {
     }
 
     await conn.query(
-      `INSERT INTO request_responses (request_id, donor_id, status, responded_at)
-       VALUES (?, ?, 'accepted', NOW())
-       ON DUPLICATE KEY UPDATE status = 'accepted', responded_at = NOW()`,
-      [requestId, donorId]
+      `INSERT INTO request_responses (request_id, donor_id, status, committed_units, confirmed_units, responded_at)
+       VALUES (?, ?, 'accepted', ?, 0, NOW())
+       ON DUPLICATE KEY UPDATE status = 'accepted', committed_units = VALUES(committed_units),
+                               confirmed_units = 0, responded_at = NOW()`,
+      [requestId, donorId, committedUnits]
     );
 
-    // Open the private donor<->requester chat in the same transaction, so a
-    // successful accept always has a conversation and a failed one leaves
-    // nothing behind. Chat is coordination only — it does not affect state.
+    // Open this donor's private chat with the requester in the same
+    // transaction, so a successful accept always has a conversation and a
+    // failed one leaves nothing behind. Chat is coordination only.
     await upsertConversation(conn, {
       requestId,
       donorId,
@@ -136,7 +170,17 @@ export async function acceptRequest(donorId, requestId) {
     });
 
     await conn.commit();
-    return { request_id: requestId, request_status: newRequestStatus, donor_status: 'COMMITTED' };
+    return {
+      request_id: requestId,
+      request_status: newRequestStatus,
+      donor_status: 'COMMITTED',
+      committed_units: committedUnits,
+      units_required: progress.required,
+      units_donated: progress.donated,
+      units_committed: progress.committed + committedUnits,
+      units_remaining: progress.remaining,
+      units_open: progress.open - committedUnits,
+    };
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -214,20 +258,19 @@ export async function cancelCommitment(donorId) {
     }
 
     const requestId = donorProfile.committed_request_id;
-    const newRequestStatus = requestStatusAfterCommitmentCancelled();
 
     if (requestId) {
+      // Record the withdrawal so this donor's promised units drop out of the
+      // committed total and become available to other donors again.
       await conn.query(
-        `UPDATE requests SET status = ? WHERE id = ? AND status = 'donor_accepted'`,
-        [newRequestStatus, requestId]
-      );
-      // Record the withdrawal so this donor's response no longer reads
-      // 'accepted' for a request they backed out of.
-      await conn.query(
-        `UPDATE request_responses SET status = 'declined', responded_at = NOW()
-          WHERE request_id = ? AND donor_id = ?`,
+        `UPDATE request_responses SET status = 'cancelled', responded_at = NOW()
+          WHERE request_id = ? AND donor_id = ? AND status = 'accepted'`,
         [requestId, donorId]
       );
+      // The request stays 'donor_accepted' while other donors are still
+      // committed, and only reopens to 'matched' when this was the last one.
+      const [reqRows] = await conn.query('SELECT * FROM requests WHERE id = ?', [requestId]);
+      if (reqRows[0]) await settleRequestStatus(conn, reqRows[0]);
     }
 
     await conn.query(
@@ -248,6 +291,100 @@ export async function cancelCommitment(donorId) {
   } finally {
     conn.release();
   }
+}
+
+// A committed donor's donation did not happen or did not succeed (no-show,
+// deferred at screening, collection failed). Reported by the requester for any
+// of their request's committed donors, or by the donor for their own
+// commitment. The donor's promised units drop out of the committed total, so
+// they become available to other donors again; nothing is recorded as donated,
+// and no cooldown is started (the donor returns to AVAILABLE, or to COOLDOWN
+// only if an earlier donation still has one running — same rule as closing a
+// request). Lock order: request row, then donor row.
+export async function markCommitmentUnsuccessful({ requestId, donorId, requesterId = null }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [requestRows] = await conn.query(
+      requesterId === null
+        ? 'SELECT * FROM requests WHERE id = ? FOR UPDATE'
+        : 'SELECT * FROM requests WHERE id = ? AND requester_id = ? FOR UPDATE',
+      requesterId === null ? [requestId] : [requestId, requesterId]
+    );
+    const request = requestRows[0];
+    if (!request) {
+      throw httpError(404, 'Request not found');
+    }
+
+    const [donorRows] = await conn.query(
+      'SELECT * FROM donor_profiles WHERE user_id = ? FOR UPDATE',
+      [donorId]
+    );
+    const donorProfile = donorRows[0];
+
+    const [responseRows] = await conn.query(
+      `SELECT status FROM request_responses WHERE request_id = ? AND donor_id = ? FOR UPDATE`,
+      [requestId, donorId]
+    );
+    if (!responseRows[0] || responseRows[0].status !== 'accepted') {
+      throw httpError(409, 'This donor has no active commitment on this request');
+    }
+
+    await conn.query(
+      `UPDATE request_responses SET status = 'failed', confirmed_units = 0, responded_at = NOW()
+        WHERE request_id = ? AND donor_id = ? AND status = 'accepted'`,
+      [requestId, donorId]
+    );
+
+    // Free the donor only if they are still tied to THIS request.
+    if (donorProfile && Number(donorProfile.committed_request_id) === Number(requestId)) {
+      const outcome = donorOutcomeAfterRelease(donorProfile.last_donation_date);
+      await conn.query(
+        `UPDATE donor_profiles
+            SET current_status = ?,
+                is_available = CASE WHEN ? THEN is_available ELSE FALSE END,
+                cooldown_until = COALESCE(?, cooldown_until),
+                committed_request_id = NULL,
+                commitment_ended_at = NOW(),
+                status_changed_at = NOW()
+          WHERE user_id = ? AND committed_request_id = ?`,
+        [outcome.current_status, outcome.keepIsAvailable, outcome.cooldown_until, donorId, requestId]
+      );
+    }
+
+    const { progress, status } = await settleRequestStatus(conn, request);
+
+    await conn.commit();
+    return {
+      request_id: requestId,
+      donor_id: donorId,
+      request_status: status,
+      units_required: progress.required,
+      units_donated: progress.donated,
+      units_committed: progress.committed,
+      units_remaining: progress.remaining,
+      units_open: progress.open,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+// Donor reports that their own donation was unsuccessful.
+export async function reportDonationUnsuccessful(donorId) {
+  const [rows] = await pool.query(
+    'SELECT committed_request_id FROM donor_profiles WHERE user_id = ?',
+    [donorId]
+  );
+  const requestId = rows[0]?.committed_request_id;
+  if (!requestId) {
+    throw httpError(409, 'You have no active commitment');
+  }
+  return markCommitmentUnsuccessful({ requestId, donorId });
 }
 
 // Donor advances journey step (COMMITTED -> EN_ROUTE -> ARRIVED -> DONATING)
@@ -287,16 +424,20 @@ export async function advanceCommitmentStep(donorId, nextStep) {
 // may log the donation for the request they accepted.
 const DONATION_LOGGABLE_STATES = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING', 'DONATION_COMPLETED'];
 // One donation = one unit of whole blood. A little headroom is allowed for
-// apheresis-style records; anything above is rejected, not trusted.
+// apheresis-style records; anything above is rejected, not trusted. For a
+// request-linked donation it also may not exceed the units the donor promised.
 const MAX_UNITS_PER_DONATION = 2;
 
 // Records a donation and starts the 90-day cooldown. Every rule is enforced
 // here, on the server, regardless of what the frontend sent:
 //   - The request a donation is attached to is NEVER taken from the client.
 //     It is the donor's own committed request, and only if that request is
-//     still 'donor_accepted' and this donor holds its 'accepted' response.
+//     live ('donor_accepted') and this donor holds its 'accepted' response.
 //     A client-sent request_id is accepted only as a consistency check — if
 //     it differs from the server-side commitment the call is rejected.
+//   - Units can't exceed what the donor committed, and the request's confirmed
+//     total can't exceed units_needed. The request becomes 'fulfilled' only
+//     when confirmed units reach units_needed; otherwise it stays open.
 //   - One donation record per donor per request (checked under the donor
 //     row lock, and backed by an optional unique index — migration 005).
 //   - The date must be a real, non-future date, must not predate the
@@ -381,11 +522,20 @@ export async function recordDonation(donorId, { donation_date, hospital_name, re
         throw httpError(409, 'Your commitment is not in a state where a donation can be recorded');
       }
       const [accepted] = await conn.query(
-        `SELECT 1 FROM request_responses WHERE request_id = ? AND donor_id = ? AND status = 'accepted'`,
+        `SELECT committed_units FROM request_responses
+          WHERE request_id = ? AND donor_id = ? AND status = 'accepted' FOR UPDATE`,
         [committedRequestId, donorId]
       );
       if (accepted.length === 0) {
         throw httpError(409, 'You have not accepted this request');
+      }
+      const promisedUnits = Number(accepted[0].committed_units) || 1;
+      if (unitCount > promisedUnits) {
+        throw httpError(409, `You committed ${promisedUnits} unit${promisedUnits === 1 ? '' : 's'} for this request`);
+      }
+      const unitsBefore = await loadUnitProgress(conn, committedRequestId, request.units_needed);
+      if (unitsBefore.donated + unitCount > unitsBefore.required) {
+        throw httpError(409, 'This donation would exceed the units this request needs');
       }
       if (!canDonorGiveToRecipient(donorProfile.blood_group, request.blood_group)) {
         throw httpError(409, 'Your blood group is not compatible with this request');
@@ -441,14 +591,24 @@ export async function recordDonation(donorId, { donation_date, hospital_name, re
       ]
     );
 
+    let unitProgress = null;
+    let requestStatus = null;
     if (committedRequestId) {
-      const [fulfil] = await conn.query(
-        `UPDATE requests SET status = 'fulfilled' WHERE id = ? AND status = 'donor_accepted'`,
-        [committedRequestId]
+      // The donor's units are now confirmed (no longer merely promised).
+      const [confirmed] = await conn.query(
+        `UPDATE request_responses
+            SET status = 'donated', confirmed_units = ?, responded_at = NOW()
+          WHERE request_id = ? AND donor_id = ? AND status = 'accepted'`,
+        [unitCount, committedRequestId, donorId]
       );
-      if (fulfil.affectedRows === 0) {
+      if (confirmed.affectedRows !== 1) {
         throw httpError(409, 'Request was updated by someone else — please refresh and try again');
       }
+      // Fulfilled only when confirmed units meet the requirement; otherwise
+      // it stays open ('donor_accepted' if others are committed, else 'matched').
+      const settled = await settleRequestStatus(conn, request);
+      unitProgress = settled.progress;
+      requestStatus = settled.status;
     }
 
     // A plain history entry that is older than the donation already on file
@@ -495,6 +655,15 @@ export async function recordDonation(donorId, { donation_date, hospital_name, re
       cooldown_until: cooldownInfo.cooldownUntil,
       days_remaining: cooldownInfo.daysRemaining,
       is_eligible: cooldownInfo.isEligible,
+      ...(unitProgress
+        ? {
+            request_id: committedRequestId,
+            request_status: requestStatus,
+            units_required: unitProgress.required,
+            units_donated: unitProgress.donated,
+            units_remaining: unitProgress.remaining,
+          }
+        : {}),
     };
   } catch (err) {
     await conn.rollback();

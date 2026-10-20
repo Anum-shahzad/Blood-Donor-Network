@@ -24,18 +24,12 @@ function httpError(status, message) {
   return err;
 }
 
-// Creates the conversation for a request, or makes sure it points at the
-// donor who currently holds the commitment. Called with an open transaction
-// connection from acceptRequest() (so the conversation exists the moment the
-// accept commits) and from getOrCreateConversation() (to backfill requests
-// that were accepted before chat existed).
-//
-// If a conversation already exists for this request with a DIFFERENT donor
-// (the earlier donor cancelled, someone new accepted), the row is re-pointed
-// at the new donor and the old messages are deleted. The alternative — leaving
-// them — would let the new donor read the requester's private conversation
-// with someone else, including anything like phone numbers they exchanged.
-// Same donor re-accepting keeps their history.
+// Creates this donor's conversation with the requester on a request, or
+// returns the existing one (a donor who re-accepts keeps their history). A
+// request can have several committed donors, so there is one private thread
+// per (request, donor) — donors never see each other's threads. Called with an
+// open transaction connection from acceptRequest() (so the conversation exists
+// the moment the accept commits) and from getOrCreateConversation().
 export async function upsertConversation(conn, { requestId, donorId, requesterId }) {
   await conn.query(
     `INSERT INTO conversations (request_id, donor_id, requester_id)
@@ -45,21 +39,20 @@ export async function upsertConversation(conn, { requestId, donorId, requesterId
   );
 
   const [rows] = await conn.query(
-    'SELECT * FROM conversations WHERE request_id = ? FOR UPDATE',
-    [requestId]
+    'SELECT * FROM conversations WHERE request_id = ? AND donor_id = ? FOR UPDATE',
+    [requestId, donorId]
   );
-  const conversation = rows[0];
+  return rows[0];
+}
 
-  if (Number(conversation.donor_id) !== Number(donorId)) {
-    await conn.query('DELETE FROM messages WHERE conversation_id = ?', [conversation.id]);
-    await conn.query(
-      'UPDATE conversations SET donor_id = ?, created_at = NOW() WHERE id = ?',
-      [donorId, conversation.id]
-    );
-    conversation.donor_id = donorId;
-  }
-
-  return conversation;
+// Whether this donor currently holds an active (accepted) commitment on the request.
+async function isDonorCommitmentActive(requestId, donorId) {
+  if (donorId == null) return false;
+  const [rows] = await pool.query(
+    `SELECT 1 FROM request_responses WHERE request_id = ? AND donor_id = ? AND status = 'accepted' LIMIT 1`,
+    [requestId, donorId]
+  );
+  return rows.length > 0;
 }
 
 async function runInTransaction(work) {
@@ -81,6 +74,7 @@ async function runInTransaction(work) {
 // Deliberately only a name for the other party — no email/phone. If the two
 // want to share contact details, that is their choice inside the chat.
 async function describeConversation(conversation, request, userId) {
+  const donorActive = await isDonorCommitmentActive(request.id, conversation.donor_id);
   const counterpartId = isSameUser(conversation.donor_id, userId)
     ? conversation.requester_id
     : conversation.donor_id;
@@ -93,7 +87,7 @@ async function describeConversation(conversation, request, userId) {
     request_id: conversation.request_id,
     donor_id: conversation.donor_id,
     requester_id: conversation.requester_id,
-    chat_open: isChatOpen(request),
+    chat_open: isChatOpen(request, donorActive),
     request: {
       id: request.id,
       blood_group: request.blood_group,
@@ -113,13 +107,14 @@ function isSameUser(a, b) {
   return Number(a) === Number(b);
 }
 
-// GET /api/conversations/:requestId
+// GET /api/conversations/:requestId[?donor_id=]
 //
-// Get-or-create. The conversation is normally created inside acceptRequest();
-// creating it here as well covers requests that were accepted before chat
-// shipped, and re-syncs the thread if the committed donor ever differs from
-// the one on the row. Only a party to the conversation can trigger creation.
-export async function getOrCreateConversation(userId, requestId) {
+// Get-or-create, per donor. A donor always gets their own thread; the requester
+// names which donor's thread with donorId (defaulting to the earliest donor who
+// still has an active commitment). The conversation is normally created inside
+// acceptRequest(); creating it here as well covers requests accepted before
+// chat shipped. Only a party to the conversation can trigger creation.
+export async function getOrCreateConversation(userId, requestId, donorIdParam = null) {
   const [requestRows] = await pool.query(
     'SELECT id, requester_id, status, blood_group, hospital_name, city FROM requests WHERE id = ?',
     [requestId]
@@ -129,27 +124,37 @@ export async function getOrCreateConversation(userId, requestId) {
     throw httpError(404, 'Conversation not found');
   }
 
-  const [existingRows] = await pool.query('SELECT * FROM conversations WHERE request_id = ?', [requestId]);
-  let conversation = existingRows[0];
+  const userIsRequester = isSameUser(request.requester_id, userId);
+  let donorId = userIsRequester ? donorIdParam : userId;
 
-  if (request.status === 'donor_accepted') {
-    const [committedRows] = await pool.query(
-      'SELECT user_id FROM donor_profiles WHERE committed_request_id = ? LIMIT 1',
+  if (userIsRequester && donorId == null) {
+    const [activeRows] = await pool.query(
+      `SELECT donor_id FROM request_responses
+        WHERE request_id = ? AND status = 'accepted'
+        ORDER BY responded_at ASC, id ASC LIMIT 1`,
       [requestId]
     );
-    const committedDonorId = committedRows[0]?.user_id;
+    donorId = activeRows[0]?.donor_id ?? null;
+  }
+  if (donorId == null) {
+    throw httpError(404, 'Conversation not found');
+  }
 
-    const needsSync =
-      committedDonorId && (!conversation || !isSameUser(conversation.donor_id, committedDonorId));
+  const [existingRows] = await pool.query(
+    'SELECT * FROM conversations WHERE request_id = ? AND donor_id = ?',
+    [requestId, donorId]
+  );
+  let conversation = existingRows[0];
 
+  if (!conversation && request.status === 'donor_accepted' && (await isDonorCommitmentActive(requestId, donorId))) {
     // Only someone who would be a participant of the resulting conversation
     // may cause it to be created — anyone else falls through to the 404.
-    const wouldBe = { donor_id: committedDonorId, requester_id: request.requester_id };
-    if (needsSync && isParticipant(wouldBe, userId)) {
+    const wouldBe = { donor_id: donorId, requester_id: request.requester_id };
+    if (isParticipant(wouldBe, userId)) {
       conversation = await runInTransaction((conn) =>
         upsertConversation(conn, {
           requestId,
-          donorId: committedDonorId,
+          donorId,
           requesterId: request.requester_id,
         })
       );
@@ -181,12 +186,13 @@ async function loadForParticipant(conversationId, userId) {
     conversation.request_id,
   ]);
 
-  return { conversation, request: requestRows[0] };
+  const donorActive = await isDonorCommitmentActive(conversation.request_id, conversation.donor_id);
+  return { conversation, request: requestRows[0], donorActive };
 }
 
 // GET /api/conversations/:id/messages — oldest first.
 export async function listMessages(conversationId, userId) {
-  const { conversation, request } = await loadForParticipant(conversationId, userId);
+  const { conversation, request, donorActive } = await loadForParticipant(conversationId, userId);
 
   const [rows] = await pool.query(
     `SELECT id, sender_id, message, created_at FROM (
@@ -203,21 +209,21 @@ export async function listMessages(conversationId, userId) {
   // chat_open rides along so a thread that closes while someone has it open
   // (requester marks fulfilled, donor cancels) flips to read-only on the next
   // poll without the frontend needing a separate status call.
-  return { conversation_id: conversation.id, chat_open: isChatOpen(request), messages: rows };
+  return { conversation_id: conversation.id, chat_open: isChatOpen(request, donorActive), messages: rows };
 }
 
 // POST /api/conversations/:id/messages
 export async function sendMessage(conversationId, userId, rawMessage) {
   // Participant check first, so a stranger gets the same 404 whether or not
   // their message body was valid.
-  const { conversation, request } = await loadForParticipant(conversationId, userId);
+  const { conversation, request, donorActive } = await loadForParticipant(conversationId, userId);
 
   const body = validateMessageBody(rawMessage);
   if (!body.ok) {
     throw httpError(400, body.reason);
   }
 
-  const allowed = canSendMessage(conversation, request, userId);
+  const allowed = canSendMessage(conversation, request, userId, donorActive);
   if (!allowed.ok) {
     throw httpError(allowed.status, allowed.reason);
   }

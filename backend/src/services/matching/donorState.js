@@ -21,13 +21,13 @@ export const DONOR_STATUSES = [
 
 // Requests in these statuses are still open to a new donor accepting them.
 // 'pending' is excluded on purpose — an unverified request must not start
-// matching donors against it.
-export const REQUEST_STATUSES_OPEN_FOR_ACCEPT = ['verified', 'matched'];
+// matching donors against it. 'donor_accepted' means at least one donor is
+// committed; the request stays open to more donors for as long as units remain
+// that nobody has donated or promised (see canRequestAcceptDonor).
+export const REQUEST_STATUSES_OPEN_FOR_ACCEPT = ['verified', 'matched', 'donor_accepted'];
 
-// Statuses a request settles into once a donor has committed — no other
-// donor can accept a request that has already reached one of these.
+// Terminal statuses — nobody can accept a request that has reached one.
 export const REQUEST_STATUSES_CLOSED_FOR_ACCEPT = [
-  'donor_accepted',
   'fulfilled',
   'expired',
   'cancelled',
@@ -52,11 +52,11 @@ export function canDonorAccept(donorProfile) {
   return { ok: true };
 }
 
-// A request can only take a new commitment while it's actually open. Once
-// another donor has already been accepted (or the request closed for any
-// other reason), a second accept must fail safely rather than silently
-// double-booking the request.
-export function canRequestAcceptDonor(request) {
+// A request can only take a new commitment while it's actually open AND still
+// has units nobody has donated or promised. `progress` (from requestUnits.js,
+// read under the request row lock) carries that; when it is omitted only the
+// status is checked.
+export function canRequestAcceptDonor(request, progress) {
   if (!request) {
     return { ok: false, reason: 'Request not found' };
   }
@@ -65,6 +65,9 @@ export function canRequestAcceptDonor(request) {
   }
   if (!REQUEST_STATUSES_OPEN_FOR_ACCEPT.includes(request.status)) {
     return { ok: false, reason: 'This request is not open for donor responses yet' };
+  }
+  if (progress && progress.open <= 0) {
+    return { ok: false, reason: 'All units for this request are already committed or donated' };
   }
   return { ok: true };
 }
@@ -85,16 +88,16 @@ export function canDonorCancelCommitment(donorProfile) {
   return { ok: true };
 }
 
-// What the request's status should become once a donor commits. Kept as a
-// pure lookup so the transition is documented in exactly one place.
+// What the request's status becomes once a donor commits (it stays open to
+// further donors while units remain — see canRequestAcceptDonor).
 export function requestStatusAfterAccept() {
   return 'donor_accepted';
 }
 
-// What a request reopens to when its committed donor cancels. It goes back
-// to 'matched' (not 'verified') because it has already been through the
-// matching step at least once and should return straight to active
-// matching rather than the verification queue.
+// What a request reopens to when its LAST committed donor cancels (or their
+// donation is unsuccessful). It goes back to 'matched' (not 'verified')
+// because it has already been through the matching step at least once. While
+// other donors are still committed it stays 'donor_accepted'.
 export function requestStatusAfterCommitmentCancelled() {
   return 'matched';
 }

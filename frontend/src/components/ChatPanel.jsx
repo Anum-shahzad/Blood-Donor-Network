@@ -15,7 +15,7 @@ function formatTime(value) {
 // comes from the backend — the access check (are you a party to this
 // conversation?) is enforced server-side; this component just renders what
 // the API allows.
-export default function ChatPanel({ requestId, currentUserId, onClose }) {
+export default function ChatPanel({ requestId, donorId, currentUserId, onClose }) {
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [chatOpen, setChatOpen] = useState(true);
@@ -39,7 +39,9 @@ export default function ChatPanel({ requestId, currentUserId, onClose }) {
     setMessages([]);
     setLoadError('');
 
-    apiGet(`/api/conversations/${requestId}`)
+    // A request can have several donors, each with their own thread; the
+    // requester names which donor's thread to open.
+    apiGet(`/api/conversations/${requestId}${donorId ? `?donor_id=${donorId}` : ''}`)
       .then((data) => {
         if (cancelled) return;
         setConversation(data);
@@ -52,7 +54,7 @@ export default function ChatPanel({ requestId, currentUserId, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [requestId]);
+  }, [requestId, donorId]);
 
   const conversationId = conversation?.id;
 

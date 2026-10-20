@@ -9,6 +9,7 @@
 //    again. Both paths share one transactional routine (closeRequest below).
 import { pool } from '../config/db.js';
 import { decideClosure, donorOutcomeAfterRelease } from './requestClosureRules.js';
+import { loadUnitProgress } from './requestUnits.js';
 
 // Statuses the system may expire. 'donor_accepted' is deliberately excluded:
 // a donor has committed and may already be on the way, so only the requester
@@ -57,6 +58,11 @@ export async function expireOverdueRequests() {
 // - Each donor becomes AVAILABLE, or COOLDOWN if their last_donation_date is
 //   still inside the cooldown (donorOutcomeAfterRelease). Every commitment
 //   state is released, including DONATING and DONATION_COMPLETED.
+// - A request can only be closed as 'fulfilled' once its confirmed donated
+//   units meet units_needed; until then 'fulfilled' is refused (409) and the
+//   request stays open for further donors. Cancelling is always allowed.
+// - Every still-'accepted' response on the request becomes 'cancelled', so no
+//   promised units outlive the request.
 // - We do NOT record a donation: "fulfilled"/"cancelled" proves nothing about
 //   this donor, so donations, last_donation_date, blood-group verification and
 //   the users table (suspension) are left untouched.
@@ -67,8 +73,8 @@ async function closeRequest({ requestId, requesterId = null, target, adminReject
 
     const [rows] = await conn.query(
       requesterId === null
-        ? 'SELECT status FROM requests WHERE id = ? FOR UPDATE'
-        : 'SELECT status FROM requests WHERE id = ? AND requester_id = ? FOR UPDATE',
+        ? 'SELECT id, status, units_needed FROM requests WHERE id = ? FOR UPDATE'
+        : 'SELECT id, status, units_needed FROM requests WHERE id = ? AND requester_id = ? FOR UPDATE',
       requesterId === null ? [requestId] : [requestId, requesterId]
     );
     const existing = rows[0];
@@ -79,6 +85,16 @@ async function closeRequest({ requestId, requesterId = null, target, adminReject
     const decision = decideClosure(existing.status, target);
     if (!decision.ok) {
       throw httpError(decision.httpStatus, decision.reason);
+    }
+
+    if (decision.action === 'apply' && target === 'fulfilled') {
+      const progress = await loadUnitProgress(conn, requestId, existing.units_needed);
+      if (progress.donated < progress.required) {
+        throw httpError(
+          409,
+          `Only ${progress.donated} of ${progress.required} units have a confirmed donation — the request stays open until all units are donated`
+        );
+      }
     }
 
     if (decision.action === 'apply') {
@@ -94,6 +110,12 @@ async function closeRequest({ requestId, requesterId = null, target, adminReject
         throw httpError(409, 'Request was updated by someone else — please refresh and try again');
       }
     }
+
+    await conn.query(
+      `UPDATE request_responses SET status = 'cancelled', responded_at = NOW()
+        WHERE request_id = ? AND status = 'accepted'`,
+      [requestId]
+    );
 
     const [committed] = await conn.query(
       `SELECT user_id, last_donation_date
