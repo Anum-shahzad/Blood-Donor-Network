@@ -20,16 +20,18 @@ function uploadError(status, message) {
 }
 
 // One multer instance per file-count ceiling. Every limit except the file
-// count (5 MB per file, small text fields, in-memory storage) is shared.
-function buildReceiver(maxFiles) {
+// count and the number of text fields (5 MB per file, small text fields,
+// in-memory storage) is shared. A form that carries many text fields (the new
+// blood request form) raises `fields`.
+function buildReceiver(maxFiles, maxFields = 6) {
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
       fileSize: MAX_FILE_BYTES,
       files: maxFiles,
-      fields: 6,
+      fields: maxFields,
       fieldSize: 2 * 1024,
-      parts: maxFiles + 6,
+      parts: maxFiles + maxFields,
     },
   }).array(DOCUMENT_FIELD, maxFiles);
 
@@ -55,5 +57,9 @@ function buildReceiver(maxFiles) {
 // Identity / donation evidence (Phase 1).
 export const receiveDocuments = buildReceiver(MAX_FILES_PER_SUBMISSION);
 
-// Optional request evidence (Phase 2).
+// Request evidence resubmission (Phase 2).
 export const receiveEvidenceDocuments = buildReceiver(MAX_EVIDENCE_FILES);
+
+// New blood request: the request's own text fields plus its mandatory
+// evidence files in one multipart body (field "documents", 1-3 files).
+export const receiveRequestWithEvidence = buildReceiver(MAX_EVIDENCE_FILES, 16);

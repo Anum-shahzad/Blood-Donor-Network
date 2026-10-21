@@ -6,6 +6,7 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import VerificationPanel from '../components/VerificationPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
+import IdentityRequiredNotice from '../components/IdentityRequiredNotice.jsx';
 import NotificationPopups from '../components/NotificationPopups.jsx';
 import NotificationSettings from '../components/NotificationSettings.jsx';
 import useDonorNotifications from '../lib/useDonorNotifications.js';
@@ -55,10 +56,18 @@ const URGENCY_BADGE = {
   low: 'badge-neutral',
 };
 
+// Accepting a request needs an admin-approved identity: verification Level 3
+// or higher, as derived by the server from the database. The server enforces
+// this on every accept / commitment / donation endpoint; the UI only explains it.
+function isIdentityVerified(profile) {
+  return Number(profile?.verification?.level) >= 3;
+}
+
 // The server re-checks everything on accept; this only greys out the popup's
 // Accept button when the donor obviously cannot accept right now.
 function isEligibleForAlerts(profile) {
   if (!profile) return false;
+  if (!isIdentityVerified(profile)) return false;
   if (profile.current_status && profile.current_status !== 'AVAILABLE') return false;
   return profile.cooldown_info ? profile.cooldown_info.isEligible : true;
 }
@@ -438,6 +447,10 @@ export default function DonorDashboard() {
   const canCancel = status === 'COMMITTED';
   const cooldownInfo = profile?.cooldown_info;
   const isEligible = cooldownInfo ? cooldownInfo.isEligible : true;
+  // Level comes from the server (derived from the database), never from the browser.
+  const verificationLevel = Number(profile?.verification?.level) || 1;
+  const identityVerified = isIdentityVerified(profile);
+  const needsIdentity = Boolean(profile) && !identityVerified;
   const daysRemaining = cooldownInfo ? cooldownInfo.daysRemaining : 0;
   const daysElapsed = cooldownInfo ? cooldownInfo.daysElapsed : null;
   const totalDonations = profile?.total_donations || donations.length;
@@ -498,6 +511,8 @@ export default function DonorDashboard() {
         onDismiss={(n) => notif.dismiss(n.id)}
         acceptingRequestId={actingOn}
         canAccept={Boolean(profile?.is_available) && isEligibleForAlerts(profile)}
+        identityRequired={needsIdentity}
+        onVerify={() => setTab('tab-verification')}
       />
 
       {error && <p className="error-banner">{error}</p>}
@@ -512,6 +527,9 @@ export default function DonorDashboard() {
       {/* ================================================================= */}
       {activeTab === 'tab-home' && (
         <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          {needsIdentity && (
+            <IdentityRequiredNotice level={verificationLevel} onVerify={() => setTab('tab-verification')} />
+          )}
           <div className="stat-grid" style={{ marginBottom: 0 }}>
             <div className="stat-card">
               <div className="stat-card-label"><span>Eligibility</span><ClockIcon size={16} /></div>
@@ -618,6 +636,9 @@ export default function DonorDashboard() {
       {/* ================================================================= */}
       {activeTab === 'tab-feed' && (
         <div className="tab-content stack" style={{ gap: '1.25rem' }}>
+          {needsIdentity && (
+            <IdentityRequiredNotice level={verificationLevel} onVerify={() => setTab('tab-verification')} />
+          )}
           {/* Compatibility Explanation & Area Filter Banner */}
           <div
             className="form-card"
@@ -764,16 +785,29 @@ export default function DonorDashboard() {
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => respondTo(m.id, 'accept')}
-                      disabled={actingOn === m.id || !profile?.is_available || !isEligible}
-                      className="btn btn-primary"
-                      style={{ flex: 1, padding: '0.55rem', fontSize: '0.88rem' }}
-                      title={!profile?.is_available ? 'Enable availability above to respond' : !isEligible ? 'In 90-day cooldown' : ''}
-                    >
-                      <HeartIcon size={14} />
-                      {actingOn === m.id ? 'Accepting...' : 'I Can Donate'}
-                    </button>
+                    {needsIdentity ? (
+                      <button
+                        type="button"
+                        onClick={() => setTab('tab-verification')}
+                        className="btn btn-secondary"
+                        style={{ flex: 1, padding: '0.55rem', fontSize: '0.88rem' }}
+                        title="Identity verification (Level 3) is required before you can accept a request"
+                      >
+                        <ShieldCheckIcon size={14} />
+                        Verify Identity to Accept
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => respondTo(m.id, 'accept')}
+                        disabled={actingOn === m.id || !profile?.is_available || !isEligible}
+                        className="btn btn-primary"
+                        style={{ flex: 1, padding: '0.55rem', fontSize: '0.88rem' }}
+                        title={!profile?.is_available ? 'Enable availability above to respond' : !isEligible ? 'In 90-day cooldown' : ''}
+                      >
+                        <HeartIcon size={14} />
+                        {actingOn === m.id ? 'Accepting...' : 'I Can Donate'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -843,8 +877,10 @@ export default function DonorDashboard() {
                 <strong style={{ color: 'var(--primary)' }}>{livesSaved} Lives ({totalDonations} Donations)</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0' }}>
-                <span style={{ color: 'var(--ink-muted)' }}>Donor Health Verification</span>
-                <span style={{ color: '#15803d', fontWeight: 600 }}>Fit &amp; Cleared</span>
+                <span style={{ color: 'var(--ink-muted)' }}>Identity Verification</span>
+                <span style={{ color: identityVerified ? '#15803d' : 'var(--amber)', fontWeight: 600 }}>
+                  {profile?.verification?.label || 'Registered'}
+                </span>
               </div>
             </div>
 
@@ -926,7 +962,9 @@ export default function DonorDashboard() {
               <HeartIcon size={40} />
               <h3 style={{ marginTop: '0.75rem', marginBottom: '0.35rem' }}>No Active Commitment</h3>
               <p style={{ color: 'var(--ink-muted)', fontSize: '0.92rem', maxWidth: '50ch', margin: '0 auto 1.5rem' }}>
-                You have not committed to an emergency request at this moment. You are free to view matches and accept requests.
+                {identityVerified
+                  ? 'You have not committed to an emergency request at this moment. You are free to view matches and accept requests.'
+                  : 'You have not committed to an emergency request at this moment. Identity verification (Level 3) is required before you can accept a request.'}
               </p>
               <button onClick={() => setTab('tab-feed')} className="btn btn-primary">
                 View Emergency Matches Feed
@@ -1232,7 +1270,7 @@ export default function DonorDashboard() {
       )}
 
       {/* ================================================================= */}
-      {/* VERIFICATION: OPTIONAL IDENTITY + DONATION EVIDENCE              */}
+      {/* VERIFICATION: IDENTITY (REQUIRED TO DONATE) + DONATION EVIDENCE */}
       {/* ================================================================= */}
       {activeTab === 'tab-verification' && <VerificationPanel />}
 

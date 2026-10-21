@@ -20,6 +20,8 @@ import {
   MAX_SUBMISSIONS_PER_DAY,
   LEVEL_INFO,
   VERIFICATION_NOTICE,
+  DONATION_LEVEL_REQUIRED_MESSAGE,
+  meetsDonationLevel,
   computeVerificationLevel,
   describeVerification,
   submissionPermissions,
@@ -108,6 +110,21 @@ export async function getVerificationSummaries(userIds, exec = pool) {
   const summaries = new Map();
   for (const [id, state] of states) summaries.set(id, describeVerification(state.level));
   return summaries;
+}
+
+// Server-side gate for every donor action that takes part in a donation
+// (accepting a request, moving a commitment forward, recording a donation
+// against a request). The level is derived from the database rows, exactly as
+// the badge and the Verification page derive it, so nothing the client sends
+// can satisfy it. Throws 403 below Level 3; returns the level otherwise.
+// Pass the open transaction connection as `exec` to read inside it.
+export async function assertDonorMeetsDonationLevel(donorId, exec = pool) {
+  const state = (await getVerificationStates([donorId], exec)).get(Number(donorId));
+  const level = state ? state.level : 1;
+  if (!meetsDonationLevel(level)) {
+    throw httpError(403, DONATION_LEVEL_REQUIRED_MESSAGE);
+  }
+  return level;
 }
 
 async function loadFilesBySubmission(submissionIds, exec = pool) {

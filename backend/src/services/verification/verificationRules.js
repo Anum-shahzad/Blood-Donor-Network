@@ -15,6 +15,21 @@
 export const SUBMISSION_TYPES = ['identity', 'donation_evidence'];
 export const SUBMISSION_STATUSES = ['pending', 'approved', 'rejected', 'revoked'];
 
+// Lowest level at which a donor may accept blood requests, hold a donation
+// commitment and donate against a request. Level 3 = identity approved by an
+// admin. Level 1 (registered) and Level 2 (identity pending) are NOT verified
+// identity and never qualify. Enforced on the server (see
+// assertDonorMeetsDonationLevel in verificationService.js), never only in the UI.
+export const MIN_DONATION_LEVEL = 3;
+
+export const DONATION_LEVEL_REQUIRED_MESSAGE =
+  'Identity verification is required before you can accept blood requests or donate. ' +
+  'Submit your identity document on the Verification page; once an admin approves it (Level 3) you can accept requests.';
+
+export function meetsDonationLevel(level) {
+  return Number.isInteger(level) && level >= MIN_DONATION_LEVEL;
+}
+
 export const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB per file
 export const MAX_FILES_PER_SUBMISSION = 2; // e.g. front and back of an ID card
 export const MAX_SUBMISSIONS_PER_DAY = 5; // per user, rolling 24 h
@@ -32,11 +47,11 @@ export const VERIFICATION_NOTICE =
 export const LEVEL_INFO = {
   1: {
     label: 'Registered',
-    description: 'Your account is registered. Identity verification is optional.',
+    description: 'Your account is registered. Identity verification (Level 3) is required before you can accept blood requests or donate.',
   },
   2: {
     label: 'Identity verification pending',
-    description: 'Your identity document is waiting for admin review.',
+    description: 'Your identity document is waiting for admin review. You can accept requests once it is approved.',
   },
   3: {
     label: 'Identity verified',

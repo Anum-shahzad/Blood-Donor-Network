@@ -90,12 +90,14 @@ export default function RequesterDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [openChats, setOpenChats] = useState({});
-  // Optional hospital evidence: latest status per request, and the file chosen
-  // on the "post request" form (uploaded right after the request is created).
+  // Hospital evidence: latest status per request, and the files chosen on the
+  // "post request" form. Evidence is mandatory: it is sent together with the
+  // request in a single upload, and the server refuses a request without it.
   const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [evidenceLimits, setEvidenceLimits] = useState(null);
   const [newEvidenceFiles, setNewEvidenceFiles] = useState([]);
   const [newEvidenceKey, setNewEvidenceKey] = useState(0);
+  const [evidenceError, setEvidenceError] = useState('');
 
   useEffect(() => {
     loadRequests();
@@ -263,36 +265,39 @@ export default function RequesterDashboard() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setEvidenceError('');
     setSuccessMsg('');
 
-    // Evidence is optional, but a file that is clearly unusable is caught here
-    // so the person can fix it (or clear it) before anything is posted.
+    // Supporting evidence is mandatory. The server enforces this on its own
+    // (a request without valid evidence is refused whatever the browser does);
+    // these checks only give an immediate, clear message before anything is sent.
+    if (newEvidenceFiles.length === 0) {
+      setEvidenceError('Supporting evidence is required. Attach at least one document (for example a hospital slip or letter) before submitting your request.');
+      return;
+    }
     const fileProblem = checkEvidenceFiles(newEvidenceFiles, evidenceLimits || DEFAULT_EVIDENCE_LIMITS);
     if (fileProblem) {
-      setError(`${fileProblem} Remove the file to post without evidence, or choose a different one.`);
+      setEvidenceError(`${fileProblem} Choose a different file.`);
       return;
     }
 
     setSubmitting(true);
     try {
-      const res = await apiPost('/api/requests', {
+      // One multipart request: the request's fields plus its evidence files.
+      // The server stores both together or neither.
+      const payload = {
         ...form,
         units_needed: Number(form.units_needed),
         required_by: localInputToIso(form.required_by),
+      };
+      const body = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) body.append(key, String(value));
       });
-      setForm(emptyForm);
+      newEvidenceFiles.forEach((file) => body.append('documents', file));
 
-      // The request now exists. A failed evidence upload never undoes it.
-      let evidenceWarning = '';
-      if (newEvidenceFiles.length > 0) {
-        try {
-          const body = new FormData();
-          newEvidenceFiles.forEach((f) => body.append('documents', f));
-          await apiUpload(`/api/request-evidence/${res.id}`, body);
-        } catch (uploadErr) {
-          evidenceWarning = ` Your evidence could not be uploaded (${uploadErr.message}). You can add it from Active Requests.`;
-        }
-      }
+      const res = await apiUpload('/api/requests', body);
+      setForm(emptyForm);
       setNewEvidenceFiles([]);
       setNewEvidenceKey((k) => k + 1);
 
@@ -300,9 +305,11 @@ export default function RequesterDashboard() {
       loadEvidence();
       // setTab clears the banners, so the message is set after it.
       setTab('tab-active');
-      setSuccessMsg(`Emergency request #${res.id} created successfully! Admin verification queue has been notified.${evidenceWarning}`);
+      setSuccessMsg(`Emergency request #${res.id} created successfully with your supporting evidence! Admin verification queue has been notified.`);
     } catch (err) {
       setError(err.message);
+      // The form is long; bring the message into view.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSubmitting(false);
     }
@@ -645,7 +652,7 @@ export default function RequesterDashboard() {
               Post Emergency Blood Request
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
-              Emergency requests immediately alert compatible registered donors near the hospital.
+              Emergency requests immediately alert compatible, identity-verified donors near the hospital.
             </p>
 
             <form onSubmit={handleSubmit}>
@@ -789,20 +796,28 @@ export default function RequesterDashboard() {
               </label>
 
               <label className="field">
-                Hospital Document / Evidence (Optional)
+                Hospital Document / Evidence (Required)
                 <input
                   key={`new-evidence-${newEvidenceKey}`}
                   type="file"
                   multiple
+                  aria-required="true"
+                  aria-invalid={evidenceError ? 'true' : undefined}
                   accept={(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).allowed_types.join(',')}
-                  onChange={(e) => setNewEvidenceFiles(Array.from(e.target.files || []))}
+                  onChange={(e) => {
+                    setNewEvidenceFiles(Array.from(e.target.files || []));
+                    setEvidenceError('');
+                  }}
                 />
                 <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', fontWeight: 400 }}>
-                  Optional, but recommended. Attaching hospital evidence may help the admin verify your request more
-                  quickly. Upload up to {(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).max_files} files (JPEG, PNG, WebP or PDF;
+                  Required. Attach a hospital slip, letter or similar document so an admin can verify your request.
+                  Upload up to {(evidenceLimits || DEFAULT_EVIDENCE_LIMITS).max_files} files (JPEG, PNG, WebP or PDF;
                   maximum 5 MB each). Only you and authorized admins can access these documents.
                 </span>
               </label>
+              {evidenceError && (
+                <p className="error-banner" role="alert" style={{ marginTop: '0.5rem' }}>{evidenceError}</p>
+              )}
 
               <button type="submit" disabled={submitting} className="btn btn-primary btn-block" style={{ marginTop: '0.75rem' }}>
                 {submitting ? 'Submitting Request...' : 'Post Emergency Request'}

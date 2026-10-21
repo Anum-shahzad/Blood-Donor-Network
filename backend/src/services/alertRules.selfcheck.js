@@ -32,7 +32,7 @@ const baseProfile = () => ({
 });
 const run = (over = {}) => evaluateAlert({
   request: baseRequest(), donorAccount: baseAccount(), donorProfile: baseProfile(),
-  existingResponse: undefined, ttlHours: TTL, now: NOW, ...over,
+  donorVerificationLevel: 3, existingResponse: undefined, ttlHours: TTL, now: NOW, ...over,
 });
 
 // The happy path still works.
@@ -40,6 +40,11 @@ expect(run().ok === true, 'verified, open request + available compatible donor -
 expect(run({ request: { ...baseRequest(), status: 'matched' } }).ok === true, "'matched' request -> allowed");
 expect(run({ request: { ...baseRequest(), required_by: null } }).ok === true, 'no needed-by time, inside default TTL -> allowed');
 expect(run({ donorProfile: { ...baseProfile(), last_donation_date: '2025-01-01' } }).ok === true, 'donor past cooldown -> allowed');
+expect(run({ donorVerificationLevel: 4 }).ok === true, 'Level 4 donor -> allowed');
+for (const lvl of [1, 2, undefined]) {
+  const r = run({ donorVerificationLevel: lvl });
+  expect(!r.ok && r.status === 404 && r.message === DONOR_NOT_AVAILABLE_MESSAGE, `donor at level ${lvl} (below Level 3) -> not alerted, generic message`);
+}
 
 // Request-side rejections (409, specific message — the requester owns this request).
 {

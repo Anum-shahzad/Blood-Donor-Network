@@ -99,14 +99,14 @@ export default function AdminRequestEvidence({ request, evidence, onDone, onErro
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <span style={LABEL_STYLE}>REQUEST EVIDENCE (OPTIONAL)</span>
+        <span style={LABEL_STYLE}>REQUEST EVIDENCE</span>
         <span className={`badge ${badge.className}`}>{badge.label}</span>
       </div>
 
       {!evidence && (
         <p style={{ margin: '0.45rem 0 0', color: 'var(--ink-muted)' }}>
-          No documents were attached. That is not a sign of a problem: in a genuine emergency, confirm with the hospital
-          by phone and verify the request as usual.
+          No documents are attached to this request (it was created before evidence became mandatory). Confirm with the
+          hospital by phone and verify the request as usual.
         </p>
       )}
 

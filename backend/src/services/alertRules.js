@@ -9,6 +9,7 @@
 import { canDonorGiveToRecipient } from './matching/compatibility.js';
 import { isEligibleByRecency } from './matching/donorMatching.js';
 import { canDonorAccept, REQUEST_STATUSES_OPEN_FOR_ACCEPT } from './matching/donorState.js';
+import { meetsDonationLevel } from './verification/verificationRules.js';
 
 // users.id / requests.id are INT columns.
 const MAX_DB_INT = 2147483647;
@@ -35,9 +36,12 @@ const deny = (status, message) => ({ ok: false, status, message });
 // donorAccount:    users row for the target id (or undefined)
 // donorProfile:    donor_profiles row for the target id (or undefined)
 // existingResponse: request_responses row for (request, donor), or undefined
+// donorVerificationLevel: the donor's derived verification level (1-5). Below
+//                  Level 3 the donor cannot accept, so they are never alerted.
+//                  Missing means not verified (fails closed).
 // ttlHours:        default request lifetime when no needed-by time was set
 // now:             ms timestamp, injectable for tests
-export function evaluateAlert({ request, donorAccount, donorProfile, existingResponse, ttlHours, now = Date.now() }) {
+export function evaluateAlert({ request, donorAccount, donorProfile, donorVerificationLevel, existingResponse, ttlHours, now = Date.now() }) {
   // ---- the request must be open, verified and not expired ----------------
   if (!request) return deny(404, 'Request not found');
 
@@ -61,6 +65,11 @@ export function evaluateAlert({ request, donorAccount, donorProfile, existingRes
     return deny(404, DONOR_NOT_AVAILABLE_MESSAGE);
   }
   if (!canDonorAccept(donorProfile).ok) {
+    return deny(404, DONOR_NOT_AVAILABLE_MESSAGE);
+  }
+  // Same Level 3 minimum acceptRequest() enforces. Same generic message so a
+  // requester cannot learn anything about a donor's verification state.
+  if (!meetsDonationLevel(donorVerificationLevel)) {
     return deny(404, DONOR_NOT_AVAILABLE_MESSAGE);
   }
   if (!canDonorGiveToRecipient(donorProfile.blood_group, request.blood_group)) {

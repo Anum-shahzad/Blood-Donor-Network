@@ -10,7 +10,11 @@ import { UNIT_PROGRESS_COLUMNS_SQL, withUnitProgress } from '../services/request
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
 import { checkRadius, parseCoordinates } from '../services/geo.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
+import { meetsDonationLevel } from '../services/verification/verificationRules.js';
 import { createUrgentAlertNotification, sendPushForNotification } from '../services/notifications/notificationService.js';
+import { receiveRequestWithEvidence } from '../middleware/uploadDocuments.js';
+import { prepareRequestEvidence, insertEvidenceSubmission } from '../services/requestEvidence/requestEvidenceService.js';
+import { EVIDENCE_REQUIRED_MESSAGE } from '../services/requestEvidence/requestEvidenceRules.js';
 
 const router = Router();
 
@@ -18,13 +22,28 @@ const router = Router();
 router.use(authenticate);
 
 // POST /api/requests — create a new blood request. Requester only.
+// multipart/form-data: the request's text fields plus 1-3 evidence files in
+// the field "documents" (and an optional text field "note"). Supporting
+// evidence is MANDATORY and is validated here on the server: a request with no
+// file, an empty file, an oversized file or a file that is not a JPEG, PNG,
+// WebP or PDF (judged by content, not name) is refused and nothing is stored.
+// The request and its evidence are saved in one transaction, so a request can
+// never exist without its evidence submission.
 // Enforces 24-hour rate limit (max 3 requests/day) as mandated by prototype abuse prevention policy.
-router.post('/', authorize('requester'), async (req, res, next) => {
+router.post('/', authorize('requester'), receiveRequestWithEvidence, async (req, res, next) => {
+  let conn;
   try {
-    const errors = validateRequestPayload(req.body);
+    const body = req.body || {};
+    const errors = validateRequestPayload(body);
+    if (!Array.isArray(req.files) || req.files.length === 0) {
+      errors.push(EVIDENCE_REQUIRED_MESSAGE);
+    }
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('; ') });
     }
+
+    // File content checks (signature, size, empty files) before any database work.
+    const evidence = prepareRequestEvidence(req.files, { note: body.note });
 
     // Rate-limiting check: max 3 requests per 24 hours per user
     const [recentRows] = await pool.query(
@@ -51,15 +70,18 @@ router.post('/', authorize('requester'), async (req, res, next) => {
       patient_case,
       contact_phone,
       attendant_name,
-    } = req.body;
+    } = body;
 
     // Optional exact hospital location (already validated above). Without it
     // the city centre is used for distance matching.
-    const coords = parseCoordinates(req.body.latitude, req.body.longitude);
+    const coords = parseCoordinates(body.latitude, body.longitude);
     const lat = coords.none ? null : Math.round(coords.latitude * 100000) / 100000;
     const lng = coords.none ? null : Math.round(coords.longitude * 100000) / 100000;
 
-    const [result] = await pool.query(
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
       `INSERT INTO requests
          (requester_id, blood_group, units_needed, hospital_name, city, urgency, required_by,
           patient_case, contact_phone, attendant_name, latitude, longitude, status, is_verified)
@@ -67,10 +89,10 @@ router.post('/', authorize('requester'), async (req, res, next) => {
       [
         req.user.id,
         blood_group,
-        units_needed,
+        Number(units_needed),
         hospital_name.trim(),
         city.trim(),
-        urgency,
+        urgency || 'medium',
         required_by ? new Date(required_by) : null,
         patient_case ? patient_case.trim() : null,
         contact_phone ? contact_phone.trim() : null,
@@ -80,9 +102,18 @@ router.post('/', authorize('requester'), async (req, res, next) => {
       ]
     );
 
-    res.status(201).json({ id: result.insertId, status: 'pending' });
+    // Same transaction as the request: both are saved or neither is.
+    await insertEvidenceSubmission(conn, result.insertId, evidence.prepared, evidence.note);
+
+    await conn.commit();
+    res.status(201).json({ id: result.insertId, status: 'pending', evidence_status: 'pending' });
   } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch { /* connection already gone */ }
+    }
     next(err);
+  } finally {
+    if (conn) conn.release();
   }
 });
 
@@ -135,12 +166,15 @@ router.get('/mine', authorize('requester'), async (req, res, next) => {
         try {
           const compatibleGroups = getCompatibleDonorGroups(r.blood_group);
           const [donors] = await pool.query(
-            `SELECT COUNT(*) AS total
+            `SELECT user_id
              FROM donor_profiles
              WHERE is_available = TRUE AND blood_group IN (?)`,
             [compatibleGroups]
           );
-          return { ...r, matched_donors_count: donors[0]?.total || 0 };
+          // Only donors who can actually accept (verification Level 3+) count.
+          const levels = await getVerificationSummaries(donors.map((d) => d.user_id));
+          const matchedCount = donors.filter((d) => meetsDonationLevel(levels.get(Number(d.user_id))?.level)).length;
+          return { ...r, matched_donors_count: matchedCount };
         } catch {
           return { ...r, matched_donors_count: 0 };
         }
@@ -251,7 +285,11 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
     }).ok);
 
     const summaries = await getVerificationSummaries(inRange.map((c) => c.id));
-    const withVerification = inRange.map((c) => ({ ...c, verification: summaries.get(Number(c.id)) }));
+    // A donor below Level 3 cannot accept a request, so they are not offered as
+    // a match. A donor already committed to THIS request stays visible.
+    const withVerification = inRange
+      .map((c) => ({ ...c, verification: summaries.get(Number(c.id)) }))
+      .filter((c) => Number(c.committed_request_id) === Number(requestId) || meetsDonationLevel(c.verification?.level));
     const ranked = rankDonorCandidates(withVerification, request);
 
     // Apply privacy masking if donor enabled phone masking and is not committed to this request
@@ -325,10 +363,14 @@ router.post('/:id/alert/:donorId', authorize('requester'), async (req, res, next
       [requestId, donorId]
     );
 
+    // Donors below Level 3 cannot accept, so they are never alerted.
+    const donorLevels = await getVerificationSummaries([donorId], conn);
+
     const verdict = evaluateAlert({
       request: reqRows[0],
       donorAccount: accountRows[0],
       donorProfile: profileRows[0],
+      donorVerificationLevel: donorLevels.get(Number(donorId))?.level,
       existingResponse: responseRows[0],
       ttlHours: defaultTtlHours(),
     });

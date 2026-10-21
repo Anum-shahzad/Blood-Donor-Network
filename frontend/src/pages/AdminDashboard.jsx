@@ -31,7 +31,7 @@ export default function AdminDashboard() {
 
   const [analytics, setAnalytics] = useState(null);
   const [requests, setRequests] = useState([]);
-  // Optional request evidence, keyed by request id (latest submission each).
+  // Request evidence, keyed by request id (latest submission each).
   const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });

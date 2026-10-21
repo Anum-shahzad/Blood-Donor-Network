@@ -36,7 +36,8 @@ export function checkEvidenceFiles(files, limits) {
 // Evidence section of one request card, for the requester. Everything shown
 // here comes from the server: the status, and the admin's message when
 // evidence was rejected or more information was requested. Evidence is
-// optional, and its review never changes the request's own verification.
+// required when a request is posted; its review never changes the request's
+// own verification.
 export default function RequestEvidencePanel({ requestId, evidence, limits: limitsProp, onChanged }) {
   const limits = limitsProp || DEFAULT_EVIDENCE_LIMITS;
   const [files, setFiles] = useState([]);
@@ -102,15 +103,14 @@ export default function RequestEvidencePanel({ requestId, evidence, limits: limi
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <span style={{ ...LABEL_STYLE, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-          <FileTextIcon size={12} /> HOSPITAL EVIDENCE (OPTIONAL)
+          <FileTextIcon size={12} /> HOSPITAL EVIDENCE
         </span>
         <span className={`badge ${badge.className}`}>{badge.label}</span>
       </div>
 
       {status === 'none' && (
         <p style={{ margin: '0.5rem 0 0', color: 'var(--ink-muted)' }}>
-          Not required. Your request is reviewed with or without documents. If you have a hospital slip or letter,
-          you can add it here.
+          No evidence is attached to this request. Add a hospital slip or letter here so an admin can review it.
         </p>
       )}
 

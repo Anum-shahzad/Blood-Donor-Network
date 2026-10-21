@@ -60,9 +60,10 @@ router.get('/documents/:key', authenticate, authorize('requester', 'admin'), asy
 });
 
 // POST /api/request-evidence/:requestId — multipart, field "documents"
-// (1-3 files) plus an optional text field "note". Optional for requesters:
-// requests are created, verified and accepted exactly as before without it.
-// Also used to resubmit after a rejection or a request for more information.
+// (1-3 files) plus an optional text field "note". Evidence for a NEW request is
+// sent with the request itself (POST /api/requests, which refuses a request
+// without it); this route is used to resubmit after a rejection or a request
+// for more information, and to add evidence to an older request that has none.
 router.post(
   '/:requestId',
   authenticate,

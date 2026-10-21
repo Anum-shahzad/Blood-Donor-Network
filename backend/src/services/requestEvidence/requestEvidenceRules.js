@@ -1,10 +1,17 @@
-// Pure rules for optional request evidence and its admin review. No database
-// access here: the service layer feeds in what the database says and this
-// decides what is allowed.
+// Pure rules for request evidence and its admin review. No database access
+// here: the service layer feeds in what the database says and this decides
+// what is allowed.
+//
+// Supporting evidence is MANDATORY when a request is created: POST
+// /api/requests refuses a request that has no valid document attached, and the
+// request and its evidence are stored in one transaction. The same upload
+// route is still used to resubmit after a rejection or a request for more
+// information.
 //
 // Evidence review is separate from request verification. Nothing in this
 // feature changes requests.is_verified or requests.status:
-//   * a request without evidence is a normal request (evidence is optional);
+//   * a request cannot be created without evidence, but approving or rejecting
+//     that evidence never changes the request itself;
 //   * approving evidence does not verify the request;
 //   * rejecting evidence or asking for more information does not cancel,
 //     un-verify or block the request.
@@ -33,8 +40,12 @@ export const NOTE_MAX_LENGTH = 500;
 // on, a live request only; a fulfilled / cancelled / expired one is history.
 export const LIVE_REQUEST_STATUSES = ['pending', 'verified', 'matched', 'donor_accepted'];
 
+export const EVIDENCE_REQUIRED_MESSAGE =
+  'Supporting evidence is required. Attach 1 to 3 documents (JPEG, PNG, WebP or PDF, up to 5 MB each), ' +
+  'such as a hospital slip or letter, before submitting a blood request.';
+
 export const EVIDENCE_NOTICE =
-  'Evidence is optional. A request without documents is still reviewed, and missing paperwork is never treated as a sign of fraud. ' +
+  'Supporting evidence is required for every blood request and is reviewed by an admin. ' +
   'Reviewing evidence does not change whether the request itself is verified.';
 
 // Optional text field (requester note, admin internal note). Returns an error

@@ -14,6 +14,8 @@ export default function NotificationPopups({
   onDismiss,
   acceptingRequestId,
   canAccept,
+  identityRequired = false,
+  onVerify,
 }) {
   if (!items || items.length === 0) return null;
   const showSoundHint = soundState === 'off' || soundState === 'blocked';
@@ -58,6 +60,18 @@ export default function NotificationPopups({
               View Request
             </button>
           </div>
+          {identityRequired && (
+            <p style={{ margin: '0.55rem 0 0', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+              Identity verification (Level 3) is required before you can accept a request.{' '}
+              <button
+                type="button"
+                onClick={onVerify}
+                style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }}
+              >
+                Go to Verification
+              </button>
+            </p>
+          )}
         </div>
       ))}
     </div>

@@ -206,7 +206,7 @@ export default function VerificationPanel() {
           </div>
 
           <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-            Optional. You can use the app fully without it. Submitting a photo ID lets an admin confirm the account is yours.
+            Required to accept blood requests and donate (Level 3). Submitting a photo ID lets an admin confirm the account is yours.
             Only you and the admin can open your documents.
           </p>
 
@@ -264,7 +264,7 @@ export default function VerificationPanel() {
           </div>
 
           <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
-            Optional. A donation card or certificate from a hospital or blood bank documents a previous donation.
+            Optional, and not needed to donate. A donation card or certificate from a hospital or blood bank documents a previous donation.
             It is a record of that donation only, not a statement about your current health.
           </p>
 

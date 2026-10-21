@@ -1,11 +1,13 @@
-// Database-backed logic for optional request evidence: requester submissions,
-// private document access, and admin review.
+// Database-backed logic for request evidence: the mandatory evidence stored
+// with a new request, requester resubmissions, private document access, and
+// admin review.
 //
 // Hard rules enforced here (never in the client):
-//   * Evidence is optional. Nothing in this file creates, blocks, verifies,
-//     cancels or expires a request, and nothing reads or writes
-//     requests.is_verified / requests.status. Request verification and donor
-//     acceptance (acceptRequest) are untouched.
+//   * Evidence is mandatory at request creation (prepareRequestEvidence /
+//     insertEvidenceSubmission, called by POST /api/requests). Reviewing it
+//     never verifies, blocks, cancels or expires a request, and nothing here
+//     reads or writes requests.is_verified / requests.status. Request
+//     verification and donor acceptance (acceptRequest) are untouched.
 //   * Every file goes through Phase 1's prepareFiles(): identified by its
 //     content signature (not extension or client MIME), capped at 5 MB, stored
 //     under a random server-generated name.
@@ -24,6 +26,7 @@ import {
   MAX_EVIDENCE_SUBMISSIONS_PER_DAY,
   MAX_EVIDENCE_SUBMISSIONS_PER_REQUEST,
   EVIDENCE_NOTICE,
+  EVIDENCE_REQUIRED_MESSAGE,
   evaluateEvidenceSubmission,
   canRequesterSubmit,
   decideReview,
@@ -72,6 +75,50 @@ async function loadFilesBySubmission(submissionIds, exec = pool) {
     });
   }
   return map;
+}
+
+// ---------------------------------------------------------------------------
+// Mandatory evidence at request creation
+// ---------------------------------------------------------------------------
+
+// Validates the evidence sent with a NEW request before any database work.
+// Throws 400 when no file was attached, 413 for an oversized file, and 400 for
+// an empty file or one whose content is not a JPEG, PNG, WebP or PDF (judged by
+// the file's signature, never its name or the client's Content-Type).
+// Returns the files ready to store plus the normalised optional note.
+export function prepareRequestEvidence(files, meta = {}) {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw httpError(400, EVIDENCE_REQUIRED_MESSAGE);
+  }
+  const noteError = validateOptionalText(meta.note, 'note');
+  if (noteError) throw httpError(400, noteError);
+  return {
+    prepared: prepareFiles(files, MAX_EVIDENCE_FILES),
+    note: normalizeOptionalText(meta.note),
+  };
+}
+
+// Stores one pending evidence submission and its files for a request, on the
+// caller's open transaction connection. Used both when a request is created
+// (so the request and its evidence commit or roll back together) and when a
+// requester resubmits. Returns the new submission id.
+export async function insertEvidenceSubmission(conn, requestId, prepared, note) {
+  const [result] = await conn.query(
+    `INSERT INTO request_evidence_submissions (request_id, status, requester_note)
+     VALUES (?, 'pending', ?)`,
+    [requestId, note]
+  );
+  const submissionId = result.insertId;
+
+  for (const f of prepared) {
+    await conn.query(
+      `INSERT INTO request_evidence_files
+         (submission_id, storage_key, content_type, size_bytes, sha256, data)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [submissionId, f.storageKey, f.mime, f.buffer.length, f.sha256, f.buffer]
+    );
+  }
+  return submissionId;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,21 +175,7 @@ export async function submitRequestEvidence(requesterId, requestId, files, meta 
       throw httpError(429, 'Too many evidence uploads today. Please try again tomorrow.');
     }
 
-    const [result] = await conn.query(
-      `INSERT INTO request_evidence_submissions (request_id, status, requester_note)
-       VALUES (?, 'pending', ?)`,
-      [requestId, note]
-    );
-    const submissionId = result.insertId;
-
-    for (const f of prepared) {
-      await conn.query(
-        `INSERT INTO request_evidence_files
-           (submission_id, storage_key, content_type, size_bytes, sha256, data)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [submissionId, f.storageKey, f.mime, f.buffer.length, f.sha256, f.buffer]
-      );
-    }
+    const submissionId = await insertEvidenceSubmission(conn, requestId, prepared, note);
 
     await conn.commit();
     return { id: submissionId, request_id: requestId, status: 'pending' };

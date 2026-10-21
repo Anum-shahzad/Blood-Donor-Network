@@ -32,6 +32,7 @@ import { loadUnitProgress, settleRequestStatus } from './requestUnits.js';
 import { donorOutcomeAfterRelease } from './requestClosureRules.js';
 import { defaultTtlHours } from './requestLifecycle.js';
 import { validateDonationDate, daysBetween, DONATION_COOLDOWN_DAYS } from '../utils/validation.js';
+import { assertDonorMeetsDonationLevel } from './verification/verificationService.js';
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -75,6 +76,12 @@ export async function acceptRequest(donorId, requestId, { units = 1 } = {}) {
     if (!requestCheck.ok) {
       throw httpError(request ? 409 : 404, requestCheck.reason);
     }
+
+    // The donor must have an admin-approved identity (verification Level 3 or
+    // higher). Checked on the server inside the transaction, from the same
+    // database rows the badge uses, so calling this endpoint directly cannot
+    // bypass it. Level 1 (registered) and Level 2 (pending) are refused.
+    await assertDonorMeetsDonationLevel(donorId, conn);
 
     // Verification is enforced here, on the server, under the request row
     // lock: an admin-unverified (or never-verified) request cannot be
@@ -397,6 +404,9 @@ export async function advanceCommitmentStep(donorId, nextStep) {
       [donorId]
     );
     const donorProfile = donorRows[0];
+    // Moving a commitment forward is part of taking part in a donation, so the
+    // same Level 3 minimum applies. Cancelling a commitment stays available.
+    await assertDonorMeetsDonationLevel(donorId, conn);
     const check = canDonorAdvanceJourney(donorProfile, nextStep);
     if (!check.ok) {
       throw httpError(409, check.reason);
@@ -512,6 +522,10 @@ export async function recordDonation(donorId, { donation_date, hospital_name, re
 
     // --- request-linked donation: must be the donor's live, accepted request
     if (committedRequestId) {
+      // Donating against a request needs verified identity (Level 3+). A plain
+      // history entry (no request) only records a donation made elsewhere and
+      // keeps the donor's cooldown accurate, so it is not gated here.
+      await assertDonorMeetsDonationLevel(donorId, conn);
       if (!request) {
         throw httpError(409, 'The request you committed to no longer exists');
       }

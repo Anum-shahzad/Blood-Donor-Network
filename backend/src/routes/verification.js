@@ -20,7 +20,7 @@ router.get('/me', authenticate, authorize('donor'), async (req, res, next) => {
 });
 
 // POST /api/verification/identity — multipart, field "documents" (1-2 files).
-// Optional for donors: nothing else in the app depends on it.
+// An approved identity (Level 3) is required before a donor can accept a request or donate.
 router.post('/identity', authenticate, authorize('donor'), receiveDocuments, async (req, res, next) => {
   try {
     const submission = await submitDocuments(req.user.id, 'identity', req.files);
