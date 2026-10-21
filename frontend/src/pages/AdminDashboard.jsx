@@ -468,6 +468,12 @@ export default function AdminDashboard() {
                 <div className="record-actions">
                   <button
                     onClick={() => verifyRequest(r.id, !r.is_verified)}
+                    disabled={!r.is_verified && evidenceByRequest[r.id]?.status !== 'approved'}
+                    title={
+                      !r.is_verified && evidenceByRequest[r.id]?.status !== 'approved'
+                        ? 'Approve the supporting evidence before verifying this request'
+                        : undefined
+                    }
                     className="btn btn-secondary"
                     style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
                   >
@@ -579,7 +585,7 @@ export default function AdminDashboard() {
           {/* Rate-Limit Anomaly Scanner */}
           <div className="form-card">
             <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.35rem' }}>
-              Rate-Limit Velocity Monitoring (&gt;= 2 requests/day)
+              Rate-Limit Velocity Monitoring (&gt;= 3 requests/day)
             </h3>
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-muted)', marginBottom: '0.75rem' }}>
               Enforces the prototype policy of max 3 emergency requests per day per user/attendant to curb duplicate spam

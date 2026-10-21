@@ -170,6 +170,23 @@ router.patch('/requests/:id/verify', async (req, res, next) => {
         return res.status(409).json({ error: `A ${existing.status} request cannot be verified` });
       }
 
+      // A request can only be verified once its required supporting evidence has
+      // been approved by an admin. The LATEST submission decides, matching what
+      // the admin list shows; no submission, or one that is pending, rejected or
+      // awaiting more info, blocks verification. Un-verifying is never blocked.
+      if (verified) {
+        const [evidenceRows] = await conn.query(
+          'SELECT status FROM request_evidence_submissions WHERE request_id = ? ORDER BY id DESC LIMIT 1',
+          [requestId]
+        );
+        if (!evidenceRows[0] || evidenceRows[0].status !== 'approved') {
+          await conn.rollback();
+          return res.status(409).json({
+            error: 'This request cannot be verified until its supporting evidence has been approved',
+          });
+        }
+      }
+
       if (verified) {
         newStatus = existing.status === 'pending' ? 'verified' : existing.status;
       } else {
@@ -321,14 +338,14 @@ router.get('/fraud-reports', async (req, res, next) => {
       reports = [];
     }
 
-    // Dynamic audit check: find requesters who posted > 2 requests in 24 hours
+    // Dynamic audit check: find requesters who have reached the limit of 3 requests in 24 hours
     const [rateLimitFlags] = await pool.query(
       `SELECT u.id AS user_id, u.name, u.email, u.phone, COUNT(*) AS request_count_24h
        FROM requests r
        JOIN users u ON u.id = r.requester_id
        WHERE r.created_at >= NOW() - INTERVAL 1 DAY
        GROUP BY u.id, u.name, u.email, u.phone
-       HAVING request_count_24h >= 2
+       HAVING request_count_24h >= 3
        ORDER BY request_count_24h DESC`
     );
 
@@ -345,10 +362,18 @@ router.get('/fraud-reports', async (req, res, next) => {
 router.patch('/fraud-reports/:id', async (req, res, next) => {
   try {
     const reportId = Number(req.params.id);
+    if (!Number.isInteger(reportId) || reportId < 1) {
+      return res.status(400).json({ error: 'Invalid report id' });
+    }
     const { status } = req.body;
     const valid = ['pending', 'investigating', 'resolved', 'dismissed'];
     if (!valid.includes(status)) {
       return res.status(400).json({ error: `status must be one of: ${valid.join(', ')}` });
+    }
+
+    const [existingReports] = await pool.query('SELECT id FROM fraud_reports WHERE id = ?', [reportId]);
+    if (existingReports.length === 0) {
+      return res.status(404).json({ error: 'Fraud report not found' });
     }
 
     await pool.query('UPDATE fraud_reports SET status = ? WHERE id = ?', [status, reportId]);

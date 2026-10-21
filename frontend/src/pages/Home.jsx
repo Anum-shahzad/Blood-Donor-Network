@@ -335,7 +335,13 @@ export default function Home() {
                     {donorAvailable ? 'Available' : 'Not available'}
                   </button>
                 </div>
-                <button className="lp-ui-submit lp-ui-submit-light" type="button">Review nearby requests</button>
+                <Link
+                  to="/emergency"
+                  className="lp-ui-submit lp-ui-submit-light"
+                  style={{ display: 'block', boxSizing: 'border-box', textAlign: 'center', textDecoration: 'none', cursor: 'pointer' }}
+                >
+                  Review nearby requests
+                </Link>
               </div>
             </div>
             <div className="lp-split-copy lp-reveal" style={{ '--delay': '100ms' }}>
