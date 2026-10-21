@@ -1240,14 +1240,14 @@ export default function DonorDashboard() {
       {/* TAB 5: DONOR SETTINGS                                            */}
       {/* ================================================================= */}
       {activeTab === 'tab-settings' && (
-        <div className="tab-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+        <div className="tab-content" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '1.5rem', alignItems: 'start' }}>
           {/* Availability & Privacy Controls */}
           <div className="form-card">
             <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
               Availability &amp; Privacy Controls
             </h3>
 
-            <form onSubmit={saveSettings} className="stack" style={{ gap: '1rem' }}>
+            <form onSubmit={saveSettings} className="settings-form-grid">
               <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                 <div>
                   <strong style={{ display: 'block', fontSize: '0.9rem' }}>Emergency Availability</strong>
@@ -1294,7 +1294,7 @@ export default function DonorDashboard() {
               </label>
 
               {/* Alert Radius Slider */}
-              <div style={{ background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+              <div className="span-2" style={{ background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <strong style={{ fontSize: '0.9rem' }}>Maximum Alert Radius</strong>
                   <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
@@ -1368,7 +1368,7 @@ export default function DonorDashboard() {
                 </div>
               </div>
 
-              <button type="submit" disabled={savingSettings} className="btn btn-primary">
+              <button type="submit" disabled={savingSettings} className="btn btn-primary" style={{ gridColumn: '1 / -1' }}>
                 {savingSettings ? 'Saving...' : 'Save Settings & Preferences'}
               </button>
             </form>
@@ -1383,7 +1383,7 @@ export default function DonorDashboard() {
           />
 
           {/* Profile & Medical Registration */}
-          <div className="form-card">
+          <div className="form-card" style={{ maxWidth: 560 }}>
             <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
               Donor Registration Details
             </h3>

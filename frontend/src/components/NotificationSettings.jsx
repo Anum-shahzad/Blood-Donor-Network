@@ -103,7 +103,7 @@ export default function NotificationSettings({ profile, onSaved, onSoundChange, 
         notifications that arrive even when the site is closed.
       </p>
 
-      <div className="stack" style={{ gap: '0.85rem' }}>
+      <div className="alert-settings-grid">
         {/* Sound */}
         <div style={rowStyle}>
           <div style={headStyle}>
