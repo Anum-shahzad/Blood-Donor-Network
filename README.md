@@ -417,6 +417,14 @@ This release provides a foundation for continued improvements in reliability, se
 
 For release details, visit the [GitHub Releases page](https://github.com/Anum-shahzad/Blood-Donor-Network/releases).
 
+## Limitations
+
+- **Administrator Management:** Only one administrator can be initialized through the current bootstrap process, and there is no in-app interface for creating additional administrators. Multi-admin management, granular permissions, and administrative audit logs are planned improvements.
+
+- **Medical Verification:** Donor matching identifies potential candidates but cannot confirm clinical compatibility or medical eligibility. Laboratory crossmatching and professional medical screening remain necessary.
+
+- **Production Readiness:** Further security audits, end-to-end testing, monitoring, and backup and recovery procedures are needed to strengthen reliability and support large-scale usage.
+
 ## Author
 
 **Anum Shahzad**
