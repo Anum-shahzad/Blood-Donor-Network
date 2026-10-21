@@ -50,7 +50,6 @@ function navItemsFor(role) {
       { to: '/admin/dashboard?tab=tab-id-review', label: 'ID & Evidence Review', icon: IdCardIcon },
       { to: '/admin/dashboard?tab=tab-donors', label: 'Donor Registry', icon: UsersIcon },
       { to: '/admin/dashboard?tab=tab-fraud', label: 'Abuse & Fraud', icon: AlertCircleIcon },
-      { to: '/admin/dashboard?tab=tab-settings', label: 'Settings', icon: SlidersIcon },
     ];
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { apiGet, apiPatch, apiPut } from '../api/client.js';
+import { apiGet, apiPatch } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
@@ -35,16 +35,10 @@ export default function AdminDashboard() {
   const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
-  const [policies, setPolicies] = useState({
-    cooldown_days: '90',
-    max_requests_per_day: '3',
-    sms_gateway_enabled: 'true',
-  });
 
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [donorSearch, setDonorSearch] = useState('');
-  const [savingPolicies, setSavingPolicies] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -66,7 +60,6 @@ export default function AdminDashboard() {
     loadEvidence();
     loadDonors();
     loadFraudReports();
-    loadPolicies();
   }
 
   function loadAnalytics() {
@@ -102,14 +95,6 @@ export default function AdminDashboard() {
   function loadFraudReports() {
     apiGet('/api/admin/fraud-reports')
       .then((data) => setFraudData(data || { reports: [], rate_limit_flags: [] }))
-      .catch(() => {});
-  }
-
-  function loadPolicies() {
-    apiGet('/api/admin/policies')
-      .then((data) => {
-        if (data && typeof data === 'object') setPolicies((p) => ({ ...p, ...data }));
-      })
       .catch(() => {});
   }
 
@@ -164,24 +149,6 @@ export default function AdminDashboard() {
       loadFraudReports();
     } catch (err) {
       setError(err.message);
-    }
-  }
-
-  async function savePoliciesSubmit(e) {
-    e.preventDefault();
-    setSavingPolicies(true);
-    setError('');
-    setSuccessMsg('');
-    try {
-      // allowed_zones is a legacy, unused setting; never write it back.
-      const { allowed_zones: _unused, ...payload } = policies;
-      await apiPut('/api/admin/policies', payload);
-      setSuccessMsg('System policies saved.');
-      loadPolicies();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingPolicies(false);
     }
   }
 
@@ -713,70 +680,6 @@ export default function AdminDashboard() {
       {/* ID & DONATION EVIDENCE REVIEW                                    */}
       {/* ================================================================= */}
       {activeTab === 'tab-id-review' && <AdminVerificationPanel />}
-
-      {/* ================================================================= */}
-      {/* TAB 5: SYSTEM POLICIES & SETTINGS                                */}
-      {/* ================================================================= */}
-      {activeTab === 'tab-settings' && (
-        <div className="tab-content" style={{ maxWidth: 640, margin: '0 auto' }}>
-          <div className="form-card">
-            <h3 style={{ marginTop: 0, fontSize: '1.2rem', marginBottom: '0.35rem' }}>
-              System Policies &amp; Medical Safeguards
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
-              Configure network-wide rules, WHO cooldown enforcement, and emergency notification settings
-            </p>
-
-            <form onSubmit={savePoliciesSubmit} className="stack" style={{ gap: '1rem' }}>
-              <label className="field">
-                Standard Post-Donation Cooldown (Days)
-                <input
-                  type="number"
-                  min="60"
-                  max="180"
-                  value={policies.cooldown_days}
-                  onChange={(e) => setPolicies((p) => ({ ...p, cooldown_days: e.target.value }))}
-                  required
-                />
-                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
-                  Standard WHO and Safe Blood Transfusion Programme (SBTP) interval is 90 days.
-                </span>
-              </label>
-
-              <label className="field">
-                Maximum Requests Per Day Per Phone / User
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={policies.max_requests_per_day}
-                  onChange={(e) => setPolicies((p) => ({ ...p, max_requests_per_day: e.target.value }))}
-                  required
-                />
-              </label>
-
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <div>
-                  <strong style={{ display: 'block', fontSize: '0.9rem' }}>Emergency SMS &amp; WhatsApp Gateway</strong>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
-                    Enable dispatch simulations to registered verified donors
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={policies.sms_gateway_enabled === 'true'}
-                  onChange={(e) => setPolicies((p) => ({ ...p, sms_gateway_enabled: e.target.checked ? 'true' : 'false' }))}
-                  style={{ width: 18, height: 18, accentColor: 'var(--primary)' }}
-                />
-              </label>
-
-              <button type="submit" disabled={savingPolicies} className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                {savingPolicies ? 'Saving Policies...' : 'Save System Policies'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </DashboardLayout>
   );
 }

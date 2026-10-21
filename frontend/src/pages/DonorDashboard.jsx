@@ -108,12 +108,8 @@ export default function DonorDashboard() {
   // Settings form state
   const [settingsForm, setSettingsForm] = useState({
     phone_masked: true,
-    auto_cooldown_lock: true,
     alert_radius: 10,
-    notify_whatsapp: true,
-    notify_sms: true,
     notify_inapp: true,
-    preferred_language: 'en',
   });
 
   const [detailsForm, setDetailsForm] = useState({
@@ -172,12 +168,8 @@ export default function DonorDashboard() {
         });
         setSettingsForm({
           phone_masked: Boolean(data.phone_masked),
-          auto_cooldown_lock: Boolean(data.auto_cooldown_lock),
           alert_radius: Number(data.alert_radius) || 10,
-          notify_whatsapp: Boolean(data.notify_whatsapp),
-          notify_sms: Boolean(data.notify_sms),
           notify_inapp: Boolean(data.notify_inapp),
-          preferred_language: data.preferred_language || 'en',
         });
       })
       .catch((err) => setError(err.message));
@@ -1316,21 +1308,6 @@ export default function DonorDashboard() {
                 />
               </label>
 
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <div>
-                  <strong style={{ display: 'block', fontSize: '0.9rem' }}>Automatic 90-Day Medical Lock</strong>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
-                    Auto-pause matching during post-donation cooldown
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settingsForm.auto_cooldown_lock}
-                  onChange={(e) => setSettingsForm((f) => ({ ...f, auto_cooldown_lock: e.target.checked }))}
-                  style={{ width: 18, height: 18, accentColor: 'var(--primary)' }}
-                />
-              </label>
-
               {/* Alert Radius Slider */}
               <div className="span-2" style={{ background: 'var(--paper)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
@@ -1375,25 +1352,7 @@ export default function DonorDashboard() {
                 <strong style={{ fontSize: '0.9rem', display: 'block', marginBottom: '0.5rem' }}>
                   Urgent Notification Channels
                 </strong>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', fontSize: '0.82rem', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={settingsForm.notify_whatsapp}
-                      onChange={(e) => setSettingsForm((f) => ({ ...f, notify_whatsapp: e.target.checked }))}
-                      style={{ accentColor: 'var(--primary)' }}
-                    />
-                    <span>WhatsApp</span>
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', fontSize: '0.82rem', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={settingsForm.notify_sms}
-                      onChange={(e) => setSettingsForm((f) => ({ ...f, notify_sms: e.target.checked }))}
-                      style={{ accentColor: 'var(--primary)' }}
-                    />
-                    <span>SMS</span>
-                  </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem', textAlign: 'center' }}>
                   <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', fontSize: '0.82rem', cursor: 'pointer' }}>
                     <input
                       type="checkbox"

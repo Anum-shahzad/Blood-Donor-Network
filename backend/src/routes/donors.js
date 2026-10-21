@@ -28,15 +28,11 @@ router.get('/me', async (req, res, next) => {
               dp.current_status, dp.committed_request_id, dp.commitment_started_at,
               dp.commitment_ended_at, dp.cooldown_until,
               COALESCE(dp.phone_masked, TRUE) AS phone_masked,
-              COALESCE(dp.auto_cooldown_lock, TRUE) AS auto_cooldown_lock,
               COALESCE(dp.alert_radius, 10) AS alert_radius,
               dp.latitude, dp.longitude,
-              COALESCE(dp.notify_whatsapp, TRUE) AS notify_whatsapp,
-              COALESCE(dp.notify_sms, TRUE) AS notify_sms,
               COALESCE(dp.notify_inapp, TRUE) AS notify_inapp,
               COALESCE(dp.notify_browser, TRUE) AS notify_browser,
-              COALESCE(dp.notify_push, TRUE) AS notify_push,
-              COALESCE(dp.preferred_language, 'en') AS preferred_language
+              COALESCE(dp.notify_push, TRUE) AS notify_push
        FROM users u
        LEFT JOIN donor_profiles dp ON dp.user_id = u.id
        WHERE u.id = ?`,
@@ -306,14 +302,10 @@ router.patch('/me/settings', async (req, res, next) => {
   try {
     const {
       phone_masked,
-      auto_cooldown_lock,
       alert_radius,
-      notify_whatsapp,
-      notify_sms,
       notify_inapp,
       notify_browser,
       notify_push,
-      preferred_language,
     } = req.body;
 
     if (alert_radius !== undefined && alert_radius !== null) {
@@ -332,25 +324,17 @@ router.patch('/me/settings', async (req, res, next) => {
     await pool.query(
       `UPDATE donor_profiles
        SET phone_masked = COALESCE(?, phone_masked),
-           auto_cooldown_lock = COALESCE(?, auto_cooldown_lock),
            alert_radius = COALESCE(?, alert_radius),
-           notify_whatsapp = COALESCE(?, notify_whatsapp),
-           notify_sms = COALESCE(?, notify_sms),
            notify_inapp = COALESCE(?, notify_inapp),
            notify_browser = COALESCE(?, notify_browser),
-           notify_push = COALESCE(?, notify_push),
-           preferred_language = COALESCE(?, preferred_language)
+           notify_push = COALESCE(?, notify_push)
        WHERE user_id = ?`,
       [
         typeof phone_masked === 'boolean' ? phone_masked : null,
-        typeof auto_cooldown_lock === 'boolean' ? auto_cooldown_lock : null,
         typeof alert_radius === 'number' ? alert_radius : null,
-        typeof notify_whatsapp === 'boolean' ? notify_whatsapp : null,
-        typeof notify_sms === 'boolean' ? notify_sms : null,
         typeof notify_inapp === 'boolean' ? notify_inapp : null,
         typeof notify_browser === 'boolean' ? notify_browser : null,
         typeof notify_push === 'boolean' ? notify_push : null,
-        typeof preferred_language === 'string' ? preferred_language : null,
         req.user.id,
       ]
     );
