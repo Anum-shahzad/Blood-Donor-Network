@@ -10,6 +10,7 @@ import { UNIT_PROGRESS_COLUMNS_SQL, withUnitProgress } from '../services/request
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
 import { checkRadius, parseCoordinates } from '../services/geo.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
+import { createUrgentAlertNotification, sendPushForNotification } from '../services/notifications/notificationService.js';
 
 const router = Router();
 
@@ -346,11 +347,44 @@ router.post('/:id/alert/:donorId', authorize('requester'), async (req, res, next
       [requestId, donorId]
     );
 
+    // Saved in the SAME transaction as the 'notified' response row: either the
+    // donor has both or neither. The notification step re-checks the donor's
+    // alert radius, remaining units, availability and channel preferences on the
+    // server; a donor outside their radius still sees the request in their feed
+    // (existing behaviour) but is NOT sent a notification.
+    const notification = await createUrgentAlertNotification(conn, { requestId, donorId });
+
     await conn.commit();
+
+    // Web Push runs after the commit (a push must never announce a rollback).
+    // Awaited, because serverless hosts freeze the process once the response is sent.
+    let push = null;
+    if (notification.created && notification.channels.push) {
+      push = await sendPushForNotification(notification.notificationId);
+    }
+
+    // Only claim what actually happened. Reasons stay generic on purpose: the
+    // requester must not learn a donor's location or notification settings.
+    let message;
+    if (notification.created) {
+      message = `Alert saved for ${reqRows[0].blood_group} blood at ${reqRows[0].hospital_name}. The donor will see it on their dashboard`;
+      if (push && push.accepted > 0) {
+        message += ` and a push notification was sent to ${push.accepted} of their device${push.accepted === 1 ? '' : 's'}.`;
+      } else {
+        message += '.';
+      }
+    } else {
+      message = `Alert recorded for ${reqRows[0].blood_group} blood at ${reqRows[0].hospital_name}, but no notification was sent to the donor (outside their alert range or their notification settings). They can still find the request in their feed.`;
+    }
 
     res.json({
       status: 'ok',
-      message: `Emergency alert dispatched to donor for ${reqRows[0].blood_group} blood at ${reqRows[0].hospital_name}.`,
+      message,
+      notification: {
+        created: notification.created,
+        push_accepted: push ? push.accepted : 0,
+        push_failed: push ? push.failed + push.expired : 0,
+      },
     });
   } catch (err) {
     if (conn) {

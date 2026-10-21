@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, apiPut } from '../api/client.js';
 import { getUser, clearSession } from '../auth/session.js';
@@ -6,6 +6,10 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import VerificationPanel from '../components/VerificationPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
+import NotificationPopups from '../components/NotificationPopups.jsx';
+import NotificationSettings from '../components/NotificationSettings.jsx';
+import useDonorNotifications from '../lib/useDonorNotifications.js';
+import { enableSound, disablePush, registerServiceWorker, soundState as readSoundState } from '../lib/notifications.js';
 import {
   DropletIcon,
   MapPinIcon,
@@ -50,6 +54,14 @@ const URGENCY_BADGE = {
   medium: 'badge-amber',
   low: 'badge-neutral',
 };
+
+// The server re-checks everything on accept; this only greys out the popup's
+// Accept button when the donor obviously cannot accept right now.
+function isEligibleForAlerts(profile) {
+  if (!profile) return false;
+  if (profile.current_status && profile.current_status !== 'AVAILABLE') return false;
+  return profile.cooldown_info ? profile.cooldown_info.isEligible : true;
+}
 
 export default function DonorDashboard() {
   const navigate = useNavigate();
@@ -102,9 +114,31 @@ export default function DonorDashboard() {
 
   const user = getUser();
 
+  // Urgent-alert notifications (in-app popup + sound + browser notification).
+  // The server decides what is eligible; this only displays what it returns.
+  const [soundUi, setSoundUi] = useState(readSoundState());
+  const notif = useDonorNotifications({ userId: user?.id, onNew: () => loadMatches() });
+  const highlightId = Number(searchParams.get('request')) || null;
+  const highlightedOnce = useRef(null);
+
   useEffect(() => {
     loadAll();
+    // Registers the service worker (no permission prompt) so system and push
+    // notifications can be shown and clicked.
+    registerServiceWorker();
   }, []);
+
+  // Opening a notification (?request=ID) scrolls to that request and flashes it.
+  useEffect(() => {
+    if (!highlightId || activeTab !== 'tab-feed' || highlightedOnce.current === highlightId) return;
+    const el = document.getElementById(`request-${highlightId}`);
+    if (!el) return;
+    highlightedOnce.current = highlightId;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('request-highlight');
+    const t = setTimeout(() => el.classList.remove('request-highlight'), 3600);
+    return () => clearTimeout(t);
+  }, [highlightId, activeTab, matches]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -192,11 +226,33 @@ export default function DonorDashboard() {
         setTab('tab-commitments');
       }
       loadAll();
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setActingOn(null);
     }
+  }
+
+  // Popup actions. Accept goes through the normal accept endpoint, so every
+  // server-side rule still applies; the notification is only marked
+  // acknowledged once that succeeds.
+  async function acceptFromNotification(n) {
+    const ok = await respondTo(n.request_id, 'accept');
+    if (ok) notif.acknowledge(n.id);
+  }
+
+  function viewFromNotification(n) {
+    notif.acknowledge(n.id);
+    highlightedOnce.current = null;
+    setSearchParams({ tab: 'tab-feed', request: String(n.request_id) });
+    loadMatches();
+  }
+
+  async function turnOnSoundFromPopup() {
+    setSoundUi(await enableSound());
+    notif.refresh();
   }
 
   async function cancelCommitment() {
@@ -350,7 +406,10 @@ export default function DonorDashboard() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Stop this device receiving push alerts for the account that just left.
+    // Needs the token, so it runs before the session is cleared; best effort.
+    try { await disablePush(); } catch { /* logging out must never be blocked */ }
     clearSession();
     navigate('/login');
   }
@@ -429,6 +488,17 @@ export default function DonorDashboard() {
           </div>
         </div>
       </div>
+
+      <NotificationPopups
+        items={notif.items}
+        soundState={soundUi === 'on' && notif.soundBlocked ? 'blocked' : soundUi}
+        onEnableSound={turnOnSoundFromPopup}
+        onView={viewFromNotification}
+        onAccept={acceptFromNotification}
+        onDismiss={(n) => notif.dismiss(n.id)}
+        acceptingRequestId={actingOn}
+        canAccept={Boolean(profile?.is_available) && isEligibleForAlerts(profile)}
+      />
 
       {error && <p className="error-banner">{error}</p>}
       {successMsg && (
@@ -608,7 +678,7 @@ export default function DonorDashboard() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
               {filteredMatches.map((m) => (
-                <div key={m.id} className="record-card state-critical" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div key={m.id} id={`request-${m.id}`} className="record-card state-critical" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                   <div>
                     <div className="record-title" style={{ alignItems: 'flex-start' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1303,6 +1373,14 @@ export default function DonorDashboard() {
               </button>
             </form>
           </div>
+
+          <NotificationSettings
+            profile={profile}
+            onSaved={loadAll}
+            onSoundChange={setSoundUi}
+            setError={setError}
+            setSuccess={setSuccessMsg}
+          />
 
           {/* Profile & Medical Registration */}
           <div className="form-card">

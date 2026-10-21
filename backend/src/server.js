@@ -8,6 +8,7 @@ import donorsRouter from './routes/donors.js';
 import requestsRouter from './routes/requests.js';
 import adminRouter from './routes/admin.js';
 import conversationsRouter from './routes/conversations.js';
+import notificationsRouter from './routes/notifications.js';
 import publicRouter from './routes/public.js';
 import verificationRouter from './routes/verification.js';
 import adminVerificationRouter from './routes/adminVerification.js';
@@ -97,6 +98,7 @@ app.use('/api/admin/verification', adminVerificationRouter);
 app.use('/api/admin/request-evidence', adminRequestEvidenceRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/conversations', conversationsRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // 404 for anything unmatched
 app.use((req, res) => {

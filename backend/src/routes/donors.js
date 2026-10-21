@@ -34,6 +34,8 @@ router.get('/me', async (req, res, next) => {
               COALESCE(dp.notify_whatsapp, TRUE) AS notify_whatsapp,
               COALESCE(dp.notify_sms, TRUE) AS notify_sms,
               COALESCE(dp.notify_inapp, TRUE) AS notify_inapp,
+              COALESCE(dp.notify_browser, TRUE) AS notify_browser,
+              COALESCE(dp.notify_push, TRUE) AS notify_push,
               COALESCE(dp.preferred_language, 'en') AS preferred_language
        FROM users u
        LEFT JOIN donor_profiles dp ON dp.user_id = u.id
@@ -309,6 +311,8 @@ router.patch('/me/settings', async (req, res, next) => {
       notify_whatsapp,
       notify_sms,
       notify_inapp,
+      notify_browser,
+      notify_push,
       preferred_language,
     } = req.body;
 
@@ -333,6 +337,8 @@ router.patch('/me/settings', async (req, res, next) => {
            notify_whatsapp = COALESCE(?, notify_whatsapp),
            notify_sms = COALESCE(?, notify_sms),
            notify_inapp = COALESCE(?, notify_inapp),
+           notify_browser = COALESCE(?, notify_browser),
+           notify_push = COALESCE(?, notify_push),
            preferred_language = COALESCE(?, preferred_language)
        WHERE user_id = ?`,
       [
@@ -342,6 +348,8 @@ router.patch('/me/settings', async (req, res, next) => {
         typeof notify_whatsapp === 'boolean' ? notify_whatsapp : null,
         typeof notify_sms === 'boolean' ? notify_sms : null,
         typeof notify_inapp === 'boolean' ? notify_inapp : null,
+        typeof notify_browser === 'boolean' ? notify_browser : null,
+        typeof notify_push === 'boolean' ? notify_push : null,
         typeof preferred_language === 'string' ? preferred_language : null,
         req.user.id,
       ]

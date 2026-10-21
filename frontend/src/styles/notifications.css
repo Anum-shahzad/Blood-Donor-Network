@@ -1,0 +1,108 @@
+/* Urgent-alert popups. Uses the existing design tokens only. */
+.alert-popups {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  right: 0.75rem;
+  z-index: 1200;
+  width: min(380px, calc(100vw - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: calc(100vh - 1.5rem);
+  overflow-y: auto;
+}
+
+.alert-popup {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-left: 5px solid var(--primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.85rem 0.95rem;
+  animation: alert-popup-in 220ms ease both;
+}
+
+.alert-popup--critical { border-left-color: #c1121f; }
+
+.alert-popup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.alert-popup-group {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 900;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alert-popup-body { flex: 1 1 auto; min-width: 0; }
+.alert-popup-body strong { display: block; font-size: 0.95rem; color: var(--ink); }
+.alert-popup-body span { display: block; font-size: 0.8rem; color: var(--ink-muted); }
+
+.alert-popup-close {
+  flex: 0 0 auto;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink-muted);
+  padding: 0.15rem;
+  line-height: 0;
+}
+.alert-popup-close:hover { color: var(--primary); }
+
+.alert-popup-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  flex-wrap: wrap;
+}
+.alert-popup-actions .btn { flex: 1 1 auto; padding: 0.5rem 0.7rem; font-size: 0.85rem; }
+
+.alert-popup-sound {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.alert-popup-sound button {
+  background: none;
+  border: 0;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.request-highlight {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  animation: request-highlight-fade 3.5s ease forwards;
+}
+
+@keyframes alert-popup-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes request-highlight-fade {
+  0%, 70% { outline-color: var(--primary); }
+  100% { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alert-popup, .request-highlight { animation: none; }
+}

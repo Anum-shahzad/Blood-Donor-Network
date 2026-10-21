@@ -14,7 +14,8 @@
     "test:alerts": "node src/services/alertRules.selfcheck.js",
     "test:request-closure": "node src/services/requestClosureRules.selfcheck.js",
     "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth && npm run test:chat && npm run test:alerts && npm run test:request-closure && npm run test:geo",
-    "test:geo": "node src/services/geo.selfcheck.js"
+    "test:geo": "node src/services/geo.selfcheck.js",
+    "vapid:generate": "web-push generate-vapid-keys"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -23,7 +24,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
-    "mysql2": "^3.10.0"
+    "mysql2": "^3.10.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
