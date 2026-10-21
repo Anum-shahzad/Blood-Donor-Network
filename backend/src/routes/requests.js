@@ -8,6 +8,7 @@ import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 import { acceptRequest, declineRequest, markCommitmentUnsuccessful } from '../services/donorCommitment.js';
 import { UNIT_PROGRESS_COLUMNS_SQL, withUnitProgress } from '../services/requestUnits.js';
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
+import { checkRadius, parseCoordinates } from '../services/geo.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
 
 const router = Router();
@@ -51,11 +52,17 @@ router.post('/', authorize('requester'), async (req, res, next) => {
       attendant_name,
     } = req.body;
 
+    // Optional exact hospital location (already validated above). Without it
+    // the city centre is used for distance matching.
+    const coords = parseCoordinates(req.body.latitude, req.body.longitude);
+    const lat = coords.none ? null : Math.round(coords.latitude * 100000) / 100000;
+    const lng = coords.none ? null : Math.round(coords.longitude * 100000) / 100000;
+
     const [result] = await pool.query(
       `INSERT INTO requests
          (requester_id, blood_group, units_needed, hospital_name, city, urgency, required_by,
-          patient_case, contact_phone, attendant_name, status, is_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', FALSE)`,
+          patient_case, contact_phone, attendant_name, latitude, longitude, status, is_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', FALSE)`,
       [
         req.user.id,
         blood_group,
@@ -67,6 +74,8 @@ router.post('/', authorize('requester'), async (req, res, next) => {
         patient_case ? patient_case.trim() : null,
         contact_phone ? contact_phone.trim() : null,
         attendant_name ? attendant_name.trim() : null,
+        lat,
+        lng,
       ]
     );
 
@@ -221,6 +230,7 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
     const [candidates] = await pool.query(
       `SELECT u.id, u.name, u.city, u.phone,
               dp.blood_group, dp.last_donation_date,
+              dp.alert_radius, dp.latitude AS donor_latitude, dp.longitude AS donor_longitude,
               COALESCE(dp.phone_masked, TRUE) AS phone_masked,
               dp.current_status, dp.committed_request_id
        FROM donor_profiles dp
@@ -229,8 +239,18 @@ router.get('/:id/matches', authorize('requester'), async (req, res, next) => {
       [compatibleGroups]
     );
 
-    const summaries = await getVerificationSummaries(candidates.map((c) => c.id));
-    const withVerification = candidates.map((c) => ({ ...c, verification: summaries.get(Number(c.id)) }));
+    // Respect each donor's Maximum Alert Radius: don't offer a donor whose
+    // chosen radius does not reach this request. (Their saved coordinates are
+    // used only for this check and are not part of the response.)
+    // A donor already committed to THIS request always stays visible to its requester.
+    const inRange = candidates.filter((c) => Number(c.committed_request_id) === Number(requestId) || checkRadius({
+      donor: { latitude: c.donor_latitude, longitude: c.donor_longitude, city: c.city },
+      request: { latitude: request.latitude, longitude: request.longitude, city: request.city },
+      radiusKm: c.alert_radius,
+    }).ok);
+
+    const summaries = await getVerificationSummaries(inRange.map((c) => c.id));
+    const withVerification = inRange.map((c) => ({ ...c, verification: summaries.get(Number(c.id)) }));
     const ranked = rankDonorCandidates(withVerification, request);
 
     // Apply privacy masking if donor enabled phone masking and is not committed to this request

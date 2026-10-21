@@ -7,6 +7,9 @@ import { getCompatibleDonorGroups } from '../services/matching/compatibility.js'
 import { isEligibleByRecency } from '../services/matching/donorMatching.js';
 import { computeCooldownInfo } from '../services/matching/donorState.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
+import {
+  DEFAULT_ALERT_RADIUS_KM, MIN_ALERT_RADIUS_KM, MAX_ALERT_RADIUS_KM, checkRadius, parseCoordinates,
+} from '../services/geo.js';
 import { cancelCommitment, advanceCommitmentStep, recordDonation, reportDonationUnsuccessful } from '../services/donorCommitment.js';
 import { UNIT_PROGRESS_COLUMNS_SQL, OPEN_UNITS_CONDITION_SQL, withUnitProgress } from '../services/requestUnits.js';
 
@@ -27,6 +30,7 @@ router.get('/me', async (req, res, next) => {
               COALESCE(dp.phone_masked, TRUE) AS phone_masked,
               COALESCE(dp.auto_cooldown_lock, TRUE) AS auto_cooldown_lock,
               COALESCE(dp.alert_radius, 10) AS alert_radius,
+              dp.latitude, dp.longitude,
               COALESCE(dp.notify_whatsapp, TRUE) AS notify_whatsapp,
               COALESCE(dp.notify_sms, TRUE) AS notify_sms,
               COALESCE(dp.notify_inapp, TRUE) AS notify_inapp,
@@ -41,7 +45,10 @@ router.get('/me', async (req, res, next) => {
       return res.status(404).json({ error: 'Donor account not found' });
     }
 
-    const donor = rows[0];
+    // The donor's saved coordinates are only used to say which location mode
+    // is active; the raw numbers are not sent back.
+    const { latitude: savedLat, longitude: savedLng, ...donor } = rows[0];
+    donor.location_mode = savedLat != null && savedLng != null ? 'gps' : 'city';
     const cooldownInfo = computeCooldownInfo(donor.last_donation_date, 90);
 
     let totalDonations = 0;
@@ -110,7 +117,11 @@ router.get('/me', async (req, res, next) => {
 router.get('/matches', async (req, res, next) => {
   try {
     const [donorRows] = await pool.query(
-      'SELECT blood_group, current_status, is_available, last_donation_date FROM donor_profiles WHERE user_id = ?',
+      `SELECT dp.blood_group, dp.current_status, dp.is_available, dp.last_donation_date,
+              dp.alert_radius, dp.latitude, dp.longitude, u.city
+         FROM donor_profiles dp
+         JOIN users u ON u.id = dp.user_id
+        WHERE dp.user_id = ?`,
       [req.user.id]
     );
     const donorProfile = donorRows[0];
@@ -132,6 +143,11 @@ router.get('/matches', async (req, res, next) => {
       `SELECT r.id, r.blood_group, r.units_needed, r.hospital_name, r.city, r.urgency,
               r.required_by, r.status, r.created_at, r.patient_case,
               r.attendant_name, r.prescription_slip, u.name AS requester_name,
+              r.latitude AS request_latitude, r.longitude AS request_longitude,
+              EXISTS (
+                SELECT 1 FROM request_responses rn
+                 WHERE rn.request_id = r.id AND rn.donor_id = ? AND rn.status = 'notified'
+              ) AS alerted_me,
               ${UNIT_PROGRESS_COLUMNS_SQL}
        FROM requests r
        JOIN users u ON u.id = r.requester_id
@@ -147,17 +163,54 @@ router.get('/matches', async (req, res, next) => {
        ORDER BY
          FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
          r.created_at ASC`,
-      [defaultTtlHours(), req.user.id]
+      [req.user.id, defaultTtlHours(), req.user.id]
     );
 
     // Same eligibility acceptRequest() and the alert rules enforce: compatible
     // blood group and outside the post-donation cooldown, so the list never
     // shows a request the donor would be refused on accept.
-    const matches = isEligibleByRecency(donorProfile.last_donation_date)
+    const compatible = isEligibleByRecency(donorProfile.last_donation_date)
       ? rows.map(withUnitProgress).filter((r) => getCompatibleDonorGroups(r.blood_group).includes(donorProfile.blood_group))
       : [];
 
-    res.json({ matches, match_count: matches.length });
+    // Distance rule: only requests inside the donor's chosen Maximum Alert
+    // Radius are listed. Distance is measured from the donor's saved location
+    // (or their city centre) to the request's pinned location (or its city
+    // centre). A request a requester explicitly alerted this donor about is
+    // always shown, whatever the distance. See services/geo.js.
+    const radiusKm = Number(donorProfile.alert_radius) || DEFAULT_ALERT_RADIUS_KM;
+    const donorPlace = {
+      latitude: donorProfile.latitude,
+      longitude: donorProfile.longitude,
+      city: donorProfile.city,
+    };
+    const matches = [];
+    let hiddenByDistance = 0;
+    for (const r of compatible) {
+      const { request_latitude, request_longitude, alerted_me, ...row } = r;
+      const within = checkRadius({
+        donor: donorPlace,
+        request: { latitude: request_latitude, longitude: request_longitude, city: row.city },
+        radiusKm,
+      });
+      if (!within.ok && !Number(alerted_me)) {
+        hiddenByDistance += 1;
+        continue;
+      }
+      matches.push({ ...row, distance_km: within.km, distance_approximate: within.approximate });
+    }
+
+    const payload = {
+      matches,
+      match_count: matches.length,
+      alert_radius_km: radiusKm,
+      location_mode: donorProfile.latitude != null && donorProfile.longitude != null ? 'gps' : 'city',
+      hidden_by_distance: hiddenByDistance,
+    };
+    if (matches.length === 0 && hiddenByDistance > 0) {
+      payload.reason = `No requests within ${radiusKm} km. ${hiddenByDistance} compatible request${hiddenByDistance === 1 ? ' is' : 's are'} further away — raise your alert radius in Settings to see ${hiddenByDistance === 1 ? 'it' : 'them'}.`;
+    }
+    res.json(payload);
   } catch (err) {
     next(err);
   }
@@ -259,6 +312,19 @@ router.patch('/me/settings', async (req, res, next) => {
       preferred_language,
     } = req.body;
 
+    if (alert_radius !== undefined && alert_radius !== null) {
+      if (
+        typeof alert_radius !== 'number' ||
+        !Number.isInteger(alert_radius) ||
+        alert_radius < MIN_ALERT_RADIUS_KM ||
+        alert_radius > MAX_ALERT_RADIUS_KM
+      ) {
+        return res.status(400).json({
+          error: `alert_radius must be a whole number of km between ${MIN_ALERT_RADIUS_KM} and ${MAX_ALERT_RADIUS_KM}`,
+        });
+      }
+    }
+
     await pool.query(
       `UPDATE donor_profiles
        SET phone_masked = COALESCE(?, phone_masked),
@@ -344,6 +410,39 @@ router.put('/me', async (req, res, next) => {
     );
 
     res.json({ status: 'ok' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/donors/me/location — set or clear the location used for the alert radius.
+//   { latitude, longitude } saves a GPS point (rounded to ~100 m);
+//   { clear: true } goes back to using the donor's city centre.
+// The coordinates are private: they are only used to measure distance and are
+// never returned to requesters.
+router.put('/me/location', async (req, res, next) => {
+  try {
+    const { latitude, longitude, clear } = req.body || {};
+
+    let lat = null;
+    let lng = null;
+    if (clear !== true) {
+      const coords = parseCoordinates(latitude, longitude);
+      if (!coords.ok || coords.none) {
+        return res.status(400).json({ error: coords.error || 'latitude and longitude are required' });
+      }
+      lat = Math.round(coords.latitude * 1000) / 1000;
+      lng = Math.round(coords.longitude * 1000) / 1000;
+    }
+
+    const [result] = await pool.query(
+      'UPDATE donor_profiles SET latitude = ?, longitude = ? WHERE user_id = ?',
+      [lat, lng, req.user.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'No donor profile yet — set your blood group first' });
+    }
+    res.json({ status: 'ok', location_mode: lat === null ? 'city' : 'gps' });
   } catch (err) {
     next(err);
   }

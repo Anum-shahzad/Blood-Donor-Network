@@ -1,5 +1,6 @@
 // Shared validation rules — one place to change signup/profile/request
 // constraints instead of duplicating checks across routes.
+import { parseCoordinates } from '../services/geo.js';
 
 export const ALLOWED_SIGNUP_ROLES = ['donor', 'requester'];
 // Admin accounts are never created through public signup — they're
@@ -112,6 +113,11 @@ export function validateRequestPayload(body) {
   }
   if (body.urgency && !URGENCY_LEVELS.includes(body.urgency)) {
     errors.push(`urgency must be one of: ${URGENCY_LEVELS.join(', ')}`);
+  }
+  // Optional exact hospital location (both numbers or neither).
+  const coords = parseCoordinates(body.latitude, body.longitude);
+  if (!coords.ok) {
+    errors.push(coords.error);
   }
   if (body.required_by) {
     const parsed = new Date(body.required_by);

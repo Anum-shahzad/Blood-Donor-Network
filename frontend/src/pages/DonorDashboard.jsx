@@ -71,6 +71,7 @@ export default function DonorDashboard() {
   const [editing, setEditing] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [areaFilter, setAreaFilter] = useState('all');
 
   // Modal state
@@ -282,6 +283,57 @@ export default function DonorDashboard() {
     }
   }
 
+  const locationMode = profile?.location_mode || 'city';
+
+  // Saves the donor's current position so the alert radius is measured from
+  // where they actually are. It is only used for distance and is not shown to
+  // requesters.
+  function saveCurrentLocation() {
+    if (!navigator.geolocation) {
+      setError('This browser cannot share your location. Your city will be used instead.');
+      return;
+    }
+    setLocating(true);
+    setError('');
+    setSuccessMsg('');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await apiPut('/api/donors/me/location', {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setSuccessMsg('Location saved. Requests are now measured from where you are.');
+          loadAll();
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => {
+        setLocating(false);
+        setError('Could not read your location. Allow location access in the browser, or keep using your city.');
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  async function saveCityLocation() {
+    setLocating(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      await apiPut('/api/donors/me/location', { clear: true });
+      setSuccessMsg('Using your city as your location.');
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLocating(false);
+    }
+  }
+
   async function saveSettings(e) {
     e.preventDefault();
     setSavingSettings(true);
@@ -463,6 +515,7 @@ export default function DonorDashboard() {
                       <strong style={{ display: 'block', fontSize: '0.92rem' }}>{m.patient_case || 'Urgent Blood Transfusion'}</strong>
                       <span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
                         {m.hospital_name}{m.city ? `, ${m.city}` : ''} &middot; {m.units_open ?? m.units_needed} of {m.units_needed} unit{m.units_needed > 1 ? 's' : ''} still open
+                        {m.distance_km != null && <> &middot; {m.distance_approximate ? '≈ ' : ''}{m.distance_km} km away</>}
                       </span>
                     </div>
                     <span className={`badge ${URGENCY_BADGE[m.urgency] || 'badge-neutral'}`}>{m.urgency}</span>
@@ -611,6 +664,11 @@ export default function DonorDashboard() {
                         {Number(m.units_donated) > 0 && (
                           <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
                             {m.units_donated} already donated
+                          </span>
+                        )}
+                        {m.distance_km != null && (
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
+                            {m.distance_approximate ? '≈ ' : ''}{m.distance_km} km from you
                           </span>
                         )}
                       </div>
@@ -1186,6 +1244,21 @@ export default function DonorDashboard() {
                   <span>2 km (Local neighborhood)</span>
                   <span>10 km (Citywide)</span>
                   <span>25 km (Wider region)</span>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)', margin: '0.6rem 0 0' }}>
+                  You will only see emergencies within {settingsForm.alert_radius} km of{' '}
+                  {locationMode === 'gps' ? 'your saved location.' : `your city${profile?.city ? ` (${profile.city})` : ''}. Distances between cities are approximate.`}
+                  {' '}Save settings to apply a new radius.
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.6rem' }}>
+                  <button type="button" className="btn btn-secondary" onClick={saveCurrentLocation} disabled={locating}>
+                    {locating ? 'Locating…' : 'Use my current location'}
+                  </button>
+                  {locationMode === 'gps' && (
+                    <button type="button" className="btn btn-secondary" onClick={saveCityLocation} disabled={locating}>
+                      Use my city instead
+                    </button>
+                  )}
                 </div>
               </div>
 

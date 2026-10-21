@@ -41,6 +41,8 @@ const emptyForm = {
   patient_case: '',
   contact_phone: '',
   attendant_name: '',
+  latitude: '',
+  longitude: '',
 };
 
 function stateClassFor(request) {
@@ -86,6 +88,7 @@ export default function RequesterDashboard() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [openChats, setOpenChats] = useState({});
   // Optional hospital evidence: latest status per request, and the file chosen
   // on the "post request" form (uploaded right after the request is created).
@@ -230,6 +233,32 @@ export default function RequesterDashboard() {
     : !hasHospitalsForCity(form.city)
       ? `No hospital suggestions for ${form.city.trim()}. You can type the hospital name.`
       : `No matching hospitals in ${form.city.trim()}. You can type the name manually.`;
+
+  // Optional: pin the hospital's exact location (use it only while at the
+  // hospital). Without it, donors' distance is measured to the city centre.
+  function pinHospitalLocation() {
+    if (!navigator.geolocation) {
+      setError('This browser cannot share your location. The city will be used for distance instead.');
+      return;
+    }
+    setLocating(true);
+    setError('');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((f) => ({
+          ...f,
+          latitude: Math.round(pos.coords.latitude * 100000) / 100000,
+          longitude: Math.round(pos.coords.longitude * 100000) / 100000,
+        }));
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        setError('Could not read your location. Allow location access, or leave it out and the city will be used.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -668,6 +697,28 @@ export default function RequesterDashboard() {
                     required
                   />
                 </label>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '-0.25rem' }}>
+                {form.latitude === '' ? (
+                  <button type="button" className="btn btn-secondary" onClick={pinHospitalLocation} disabled={locating}>
+                    {locating ? 'Locating…' : 'Pin hospital location (I am at the hospital)'}
+                  </button>
+                ) : (
+                  <>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--ink-muted)' }}>Hospital location pinned.</span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setForm((f) => ({ ...f, latitude: '', longitude: '' }))}
+                    >
+                      Remove pin
+                    </button>
+                  </>
+                )}
+                <span style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+                  Optional. Donors only see requests within their chosen distance; pinning makes that exact instead of city-level.
+                </span>
               </div>
 
               <label className="field">

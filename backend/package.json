@@ -13,7 +13,8 @@
     "test:chat": "node src/services/chatRules.selfcheck.js",
     "test:alerts": "node src/services/alertRules.selfcheck.js",
     "test:request-closure": "node src/services/requestClosureRules.selfcheck.js",
-    "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth && npm run test:chat && npm run test:alerts && npm run test:request-closure"
+    "test": "npm run test:compatibility && npm run test:matching && npm run test:donor-state && npm run test:auth && npm run test:chat && npm run test:alerts && npm run test:request-closure && npm run test:geo",
+    "test:geo": "node src/services/geo.selfcheck.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
