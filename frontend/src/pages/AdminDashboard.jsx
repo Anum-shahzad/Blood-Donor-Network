@@ -125,15 +125,13 @@ export default function AdminDashboard() {
     }
   }
 
-  async function toggleDonorSuspension(id, currentlySuspended) {
-    const next = !currentlySuspended;
-    const action = next ? 'suspend' : 'reinstate';
-    if (!window.confirm(`Are you sure you want to ${action} this donor account?`)) return;
+  async function reinstateDonor(id) {
+    if (!window.confirm('Are you sure you want to reinstate this donor account?')) return;
     setError('');
     setSuccessMsg('');
     try {
-      await apiPatch(`/api/admin/donors/${id}/status`, { is_suspended: next });
-      setSuccessMsg(`Donor #${id} account ${next ? 'suspended' : 'reinstated'}.`);
+      await apiPatch(`/api/admin/donors/${id}/status`, { is_suspended: false });
+      setSuccessMsg(`Donor #${id} account reinstated.`);
       loadDonors();
     } catch (err) {
       setError(err.message);
@@ -229,7 +227,6 @@ export default function AdminDashboard() {
               {[
                 { label: 'Requests awaiting verification', count: pendingRequestsCount, tab: 'tab-verifications' },
                 { label: 'Request evidence awaiting review', count: pendingEvidenceCount, tab: 'tab-verifications' },
-                { label: 'Donors awaiting blood group verification', count: pendingDonorsCount, tab: 'tab-donors' },
                 { label: 'Rate-limit flags to review', count: fraudData?.rate_limit_flags?.length || 0, tab: 'tab-fraud' },
               ].map((item) => (
                 <div
@@ -559,13 +556,15 @@ export default function AdminDashboard() {
                       <td>{d.total_donations || (d.last_donation_date ? 1 : 0)} times</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <button
-                            onClick={() => toggleDonorSuspension(d.id, d.is_suspended)}
-                            className="btn btn-text"
-                            style={{ fontSize: '0.75rem', color: d.is_suspended ? '#15803d' : 'var(--primary)' }}
-                          >
-                            {d.is_suspended ? 'Reinstate' : 'Suspend'}
-                          </button>
+                          {d.is_suspended && (
+                            <button
+                              onClick={() => reinstateDonor(d.id)}
+                              className="btn btn-text"
+                              style={{ fontSize: '0.75rem', color: '#15803d' }}
+                            >
+                              Reinstate
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
