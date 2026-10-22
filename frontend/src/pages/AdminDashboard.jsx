@@ -125,19 +125,6 @@ export default function AdminDashboard() {
     }
   }
 
-  async function reinstateDonor(id) {
-    if (!window.confirm('Are you sure you want to reinstate this donor account?')) return;
-    setError('');
-    setSuccessMsg('');
-    try {
-      await apiPatch(`/api/admin/donors/${id}/status`, { is_suspended: false });
-      setSuccessMsg(`Donor #${id} account reinstated.`);
-      loadDonors();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   async function updateReportStatus(reportId, status) {
     setError('');
     setSuccessMsg('');
@@ -519,13 +506,12 @@ export default function AdminDashboard() {
                   <th>City / Area</th>
                   <th>Status</th>
                   <th>Total Donations</th>
-                  <th>Account Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredDonors.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: '2rem' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: '2rem' }}>
                       No matching donors found in the registry.
                     </td>
                   </tr>
@@ -554,19 +540,6 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td>{d.total_donations || (d.last_donation_date ? 1 : 0)} times</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {d.is_suspended && (
-                            <button
-                              onClick={() => reinstateDonor(d.id)}
-                              className="btn btn-text"
-                              style={{ fontSize: '0.75rem', color: '#15803d' }}
-                            >
-                              Reinstate
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   ))
                 )}
