@@ -104,7 +104,11 @@ export function requestStatusAfterCommitmentCancelled() {
 
 export const JOURNEY_STEPS = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING', 'DONATION_COMPLETED'];
 
-// Validates whether a committed donor can advance their journey step
+// Validates whether a committed donor can advance their journey step.
+// The workflow is strictly COMMITTED -> EN_ROUTE -> ARRIVED, with no skipping.
+// The last step (Donation Claimed, stored as DONATION_COMPLETED) is NOT a plain
+// step: it records a claim that the requester must confirm, so it only happens
+// through canDonorClaimDonation / claimDonation, never through this function.
 export function canDonorAdvanceJourney(donorProfile, nextStep) {
   if (!donorProfile) {
     return { ok: false, reason: 'Donor profile not found' };
@@ -114,14 +118,34 @@ export function canDonorAdvanceJourney(donorProfile, nextStep) {
   }
   const current = donorProfile.current_status;
   const validTransitions = {
-    COMMITTED: ['EN_ROUTE', 'ARRIVED'],
-    EN_ROUTE: ['ARRIVED', 'DONATING', 'DONATION_COMPLETED'],
-    ARRIVED: ['DONATING', 'DONATION_COMPLETED'],
-    DONATING: ['DONATION_COMPLETED'],
+    COMMITTED: ['EN_ROUTE'],
+    EN_ROUTE: ['ARRIVED'],
   };
   const allowed = validTransitions[current] || [];
   if (!allowed.includes(nextStep)) {
     return { ok: false, reason: `Cannot transition from ${current} to ${nextStep}` };
+  }
+  return { ok: true };
+}
+
+// A donation can only be claimed by a donor who has ARRIVED (DONATING is a
+// legacy in-between state that is still accepted). DONATION_COMPLETED is also
+// accepted so a donor left there by the old workflow, whose response is still
+// 'accepted', can submit a proper claim; a second claim is stopped because the
+// response is no longer 'accepted'. Never from COMMITTED or EN_ROUTE.
+export const CLAIMABLE_DONOR_STATES = ['ARRIVED', 'DONATING', 'DONATION_COMPLETED'];
+export function canDonorClaimDonation(donorProfile) {
+  if (!donorProfile) {
+    return { ok: false, reason: 'Donor profile not found' };
+  }
+  if (!donorProfile.committed_request_id) {
+    return { ok: false, reason: 'You have no active commitment' };
+  }
+  if (!CLAIMABLE_DONOR_STATES.includes(donorProfile.current_status)) {
+    return {
+      ok: false,
+      reason: `You can only mark a donation after you have arrived at the hospital (you are currently ${String(donorProfile.current_status).toLowerCase().replace(/_/g, ' ')})`,
+    };
   }
   return { ok: true };
 }

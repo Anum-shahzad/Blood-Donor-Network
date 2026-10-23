@@ -322,19 +322,34 @@ router.patch('/donors/:id/status', async (req, res, next) => {
 // GET /api/admin/fraud-reports — abuse detection, rate limit breaches, and submitted reports
 router.get('/fraud-reports', async (req, res, next) => {
   try {
+    // Includes "Report a Problem" filings (type donation_dispute): who reported,
+    // about whom, which request, and the state of the donor's claim, so an admin
+    // can investigate without opening anything else. The claim shown here is
+    // never a completed donation unless the requester confirmed it.
     let reports = [];
     try {
       const [rows] = await pool.query(
         `SELECT fr.id, fr.report_type, fr.details, fr.status, fr.created_at,
+                fr.target_request_id, fr.related_donor_id, fr.reviewed_at, fr.admin_note,
                 u.name AS target_user_name, u.email AS target_user_email,
-                r.hospital_name AS request_hospital, r.blood_group AS request_blood_group
+                r.hospital_name AS request_hospital, r.blood_group AS request_blood_group,
+                reporter.name AS reporter_name, reporter.email AS reporter_email, reporter.role AS reporter_role,
+                donor.name AS donor_name,
+                reviewer.name AS reviewed_by_name,
+                rr.status AS donor_response_status, rr.claimed_at, rr.claim_donation_date,
+                rr.claim_hospital_name, rr.claim_units, rr.claim_resolved_at
          FROM fraud_reports fr
          LEFT JOIN users u ON u.id = fr.target_user_id
          LEFT JOIN requests r ON r.id = fr.target_request_id
-         ORDER BY fr.created_at DESC`
+         LEFT JOIN users reporter ON reporter.id = fr.reporter_id
+         LEFT JOIN users donor ON donor.id = fr.related_donor_id
+         LEFT JOIN users reviewer ON reviewer.id = fr.reviewed_by
+         LEFT JOIN request_responses rr ON rr.request_id = fr.target_request_id AND rr.donor_id = fr.related_donor_id
+         ORDER BY FIELD(fr.status, 'pending', 'investigating', 'resolved', 'dismissed'), fr.created_at DESC`
       );
       reports = rows;
-    } catch {
+    } catch (err) {
+      console.error('Fraud report listing failed:', err.message);
       reports = [];
     }
 
@@ -358,25 +373,73 @@ router.get('/fraud-reports', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/fraud-reports/:id — update report status
+// GET /api/admin/fraud-reports/:id/events — audit trail for one report
+router.get('/fraud-reports/:id/events', async (req, res, next) => {
+  try {
+    const reportId = Number(req.params.id);
+    if (!Number.isInteger(reportId) || reportId < 1) {
+      return res.status(400).json({ error: 'Invalid report id' });
+    }
+    const [events] = await pool.query(
+      `SELECT e.id, e.action, e.from_status, e.to_status, e.note, e.created_at, a.name AS actor_name
+         FROM fraud_report_events e
+         LEFT JOIN users a ON a.id = e.actor_id
+        WHERE e.report_id = ?
+        ORDER BY e.id ASC`,
+      [reportId]
+    );
+    res.json({ events });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/fraud-reports/:id — update report status (optionally with a note).
+// Every change is written to fraud_report_events with the admin who made it, and the
+// report keeps who reviewed it last. Reviewing a donation dispute never changes the
+// donation: a disputed claim stays "not completed" whatever the report's status.
 router.patch('/fraud-reports/:id', async (req, res, next) => {
   try {
     const reportId = Number(req.params.id);
     if (!Number.isInteger(reportId) || reportId < 1) {
       return res.status(400).json({ error: 'Invalid report id' });
     }
-    const { status } = req.body;
+    const { status, note } = req.body || {};
     const valid = ['pending', 'investigating', 'resolved', 'dismissed'];
     if (!valid.includes(status)) {
       return res.status(400).json({ error: `status must be one of: ${valid.join(', ')}` });
     }
-
-    const [existingReports] = await pool.query('SELECT id FROM fraud_reports WHERE id = ?', [reportId]);
-    if (existingReports.length === 0) {
-      return res.status(404).json({ error: 'Fraud report not found' });
+    if (note != null && (typeof note !== 'string' || note.trim().length > 1000)) {
+      return res.status(400).json({ error: 'note must be text of 1000 characters or fewer' });
     }
+    const cleanNote = note && note.trim() ? note.trim() : null;
 
-    await pool.query('UPDATE fraud_reports SET status = ? WHERE id = ?', [status, reportId]);
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [existing] = await conn.query('SELECT id, status FROM fraud_reports WHERE id = ? FOR UPDATE', [reportId]);
+      if (existing.length === 0) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'Fraud report not found' });
+      }
+      await conn.query(
+        `UPDATE fraud_reports
+            SET status = ?, reviewed_by = ?, reviewed_at = NOW(), admin_note = COALESCE(?, admin_note)
+          WHERE id = ?`,
+        [status, req.user.id, cleanNote, reportId]
+      );
+      await conn.query(
+        `INSERT INTO fraud_report_events (report_id, actor_id, action, from_status, to_status, note)
+         VALUES (?, ?, 'status_changed', ?, ?, ?)`,
+        [reportId, req.user.id, existing[0].status, status, cleanNote]
+      );
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
     res.json({ status: 'ok' });
   } catch (err) {
     next(err);

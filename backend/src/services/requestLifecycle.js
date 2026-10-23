@@ -63,6 +63,11 @@ export async function expireOverdueRequests() {
 //   request stays open for further donors. Cancelling is always allowed.
 // - Every still-'accepted' response on the request becomes 'cancelled', so no
 //   promised units outlive the request.
+// - A pending donation claim ('claimed') is never wiped by a close. The
+//   requester cannot cancel/close the request until every claim has been
+//   confirmed or disputed (409), otherwise a legitimate dispute would become
+//   impossible. An admin rejection keeps the claim but turns it into
+//   'disputed' (never counted), so it stays on record for review.
 // - We do NOT record a donation: "fulfilled"/"cancelled" proves nothing about
 //   this donor, so donations, last_donation_date, blood-group verification and
 //   the users table (suspension) are left untouched.
@@ -87,6 +92,17 @@ async function closeRequest({ requestId, requesterId = null, target, adminReject
       throw httpError(decision.httpStatus, decision.reason);
     }
 
+    const [pendingClaims] = await conn.query(
+      `SELECT donor_id FROM request_responses WHERE request_id = ? AND status = 'claimed' FOR UPDATE`,
+      [requestId]
+    );
+    if (pendingClaims.length > 0 && !adminRejection) {
+      throw httpError(
+        409,
+        'A donor has claimed a donation on this request. Confirm it (Confirm Received) or mark it as Did Not Happen before closing the request'
+      );
+    }
+
     if (decision.action === 'apply' && target === 'fulfilled') {
       const progress = await loadUnitProgress(conn, requestId, existing.units_needed);
       if (progress.donated < progress.required) {
@@ -109,6 +125,17 @@ async function closeRequest({ requestId, requesterId = null, target, adminReject
       if (updated.affectedRows !== 1) {
         throw httpError(409, 'Request was updated by someone else — please refresh and try again');
       }
+    }
+
+    // Admin rejection: pending claims are kept as 'disputed' (not donated, not
+    // deleted) so they can still be reviewed.
+    if (pendingClaims.length > 0) {
+      await conn.query(
+        `UPDATE request_responses
+            SET status = 'disputed', claim_resolved_at = NOW(), confirmed_units = 0, responded_at = NOW()
+          WHERE request_id = ? AND status = 'claimed'`,
+        [requestId]
+      );
     }
 
     await conn.query(

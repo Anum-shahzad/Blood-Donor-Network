@@ -49,7 +49,7 @@ export async function upsertConversation(conn, { requestId, donorId, requesterId
 async function isDonorCommitmentActive(requestId, donorId) {
   if (donorId == null) return false;
   const [rows] = await pool.query(
-    `SELECT 1 FROM request_responses WHERE request_id = ? AND donor_id = ? AND status = 'accepted' LIMIT 1`,
+    `SELECT 1 FROM request_responses WHERE request_id = ? AND donor_id = ? AND status IN ('accepted', 'claimed') LIMIT 1`,
     [requestId, donorId]
   );
   return rows.length > 0;
@@ -130,7 +130,7 @@ export async function getOrCreateConversation(userId, requestId, donorIdParam = 
   if (userIsRequester && donorId == null) {
     const [activeRows] = await pool.query(
       `SELECT donor_id FROM request_responses
-        WHERE request_id = ? AND status = 'accepted'
+        WHERE request_id = ? AND status IN ('accepted', 'claimed')
         ORDER BY responded_at ASC, id ASC LIMIT 1`,
       [requestId]
     );

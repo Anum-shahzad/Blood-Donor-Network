@@ -52,8 +52,12 @@ function newStorageKey(ext) {
 // admin-resolved report (status = 'resolved') is the one that was acted on;
 // 'dismissed' and still-open reports do not count. When the reporting phase
 // introduces an explicit upheld outcome, change HAS_UPHELD_REPORT_SQL below.
+// 'donation_dispute' reports (Report a Problem on a donation) are excluded:
+// 'resolved' there only means an admin finished reviewing a disagreement, not
+// that the person reported was at fault. An admin who finds real misconduct
+// suspends the account, which already lowers the level.
 const HAS_UPHELD_REPORT_SQL =
-  "SELECT DISTINCT target_user_id AS user_id FROM fraud_reports WHERE target_user_id IN (?) AND status = 'resolved'";
+  "SELECT DISTINCT target_user_id AS user_id FROM fraud_reports WHERE target_user_id IN (?) AND status = 'resolved' AND report_type <> 'donation_dispute'";
 
 // Returns Map<userId, { identity, donation_evidence, level }> where identity /
 // donation_evidence are the latest submission row (or null).

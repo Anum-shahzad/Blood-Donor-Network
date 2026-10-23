@@ -6,6 +6,8 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
 import Autocomplete from '../components/Autocomplete.jsx';
+import ReportProblemModal from '../components/ReportProblemModal.jsx';
+import useRequesterNotifications from '../lib/useRequesterNotifications.js';
 import RequestEvidencePanel, { checkEvidenceFiles, DEFAULT_EVIDENCE_LIMITS } from '../components/RequestEvidencePanel.jsx';
 import {
   DropletIcon,
@@ -64,6 +66,20 @@ function requestStatusLabel(request) {
   return humanizeStatus(request.status);
 }
 
+// What the requester sees for a donor's live progress. DONATION_COMPLETED is the
+// stored name of "Donation Claimed": the donor says they donated, and it only
+// counts once the requester confirms it.
+const DONOR_PROGRESS_STEPS = [
+  { key: 'COMMITTED', label: 'Committed' },
+  { key: 'EN_ROUTE', label: 'En route' },
+  { key: 'ARRIVED', label: 'Arrived' },
+];
+function donorProgressIndex(state) {
+  if (state === 'DONATING' || state === 'DONATION_COMPLETED') return 3;
+  const i = DONOR_PROGRESS_STEPS.findIndex((s) => s.key === state);
+  return i === -1 ? 0 : i;
+}
+
 function urgencyBadgeClass(urgency) {
   if (urgency === 'critical' || urgency === 'high') return 'badge-red';
   if (urgency === 'medium') return 'badge-amber';
@@ -98,6 +114,10 @@ export default function RequesterDashboard() {
   const [newEvidenceFiles, setNewEvidenceFiles] = useState([]);
   const [newEvidenceKey, setNewEvidenceKey] = useState(0);
   const [evidenceError, setEvidenceError] = useState('');
+  const [claimActing, setClaimActing] = useState(null);
+  const [reportTarget, setReportTarget] = useState(null);
+  // Donor progress / donation-claim notices (same notification system as donor alerts).
+  const notif = useRequesterNotifications({ userId: user?.id, onNew: () => loadRequests() });
 
   useEffect(() => {
     loadRequests();
@@ -197,6 +217,45 @@ export default function RequesterDashboard() {
       setAlertSuccess(res.message || 'Emergency alert dispatched to donor.');
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function confirmClaim(requestId, donorId, donorName) {
+    setError('');
+    if (!window.confirm(`Confirm that you received ${donorName}'s blood donation? Only confirm if it really happened. This counts the units and cannot be undone.`)) return;
+    setClaimActing(`${requestId}:${donorId}`);
+    try {
+      const res = await apiPost(`/api/requests/${requestId}/commitments/${donorId}/confirm`, {});
+      setSuccessMsg(res.request_status === 'fulfilled'
+        ? `Donation confirmed. Request #${requestId} is now fulfilled.`
+        : `Donation confirmed. ${res.units_remaining} unit(s) still needed on request #${requestId}.`);
+      setOpenChats((c) => ({ ...c, [`${requestId}:${donorId}`]: false }));
+      loadRequests();
+      loadArchive();
+      notif.refresh();
+    } catch (err) {
+      setError(err.message);
+      loadRequests();
+    } finally {
+      setClaimActing(null);
+    }
+  }
+
+  async function disputeClaim(requestId, donorId, donorName) {
+    setError('');
+    if (!window.confirm(`Mark ${donorName}'s donation as Did Not Happen? It will not be counted. You can then report a problem to the administrators.`)) return;
+    setClaimActing(`${requestId}:${donorId}`);
+    try {
+      await apiPost(`/api/requests/${requestId}/commitments/${donorId}/dispute`, {});
+      setSuccessMsg(`${donorName}'s claim was marked as not having happened and was not counted. Those units are open to other donors again. Use Report a Problem if something was wrong.`);
+      setOpenChats((c) => ({ ...c, [`${requestId}:${donorId}`]: false }));
+      loadRequests();
+      notif.refresh();
+    } catch (err) {
+      setError(err.message);
+      loadRequests();
+    } finally {
+      setClaimActing(null);
     }
   }
 
@@ -327,6 +386,10 @@ export default function RequesterDashboard() {
   const fulfilledCount = archiveData?.stats?.total_fulfilled ?? requests.filter((r) => r.status === 'fulfilled').length;
   const criticalCount = activeRequests.filter((r) => r.urgency === 'critical').length;
   const totalUnitsSourced = archiveData?.stats?.total_units_received || 0;
+  const pendingClaimCount = requests.reduce(
+    (n, r) => n + (r.commitments || []).filter((c) => c.status === 'claimed').length,
+    0
+  );
 
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
@@ -342,6 +405,33 @@ export default function RequesterDashboard() {
       {successMsg && (
         <div className="badge badge-teal" style={{ display: 'block', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
           {successMsg}
+        </div>
+      )}
+
+      {pendingClaimCount > 0 && (
+        <div className="badge badge-amber" style={{ display: 'block', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          <AlertCircleIcon size={14} /> {pendingClaimCount} donation{pendingClaimCount === 1 ? ' is' : 's are'} waiting for your confirmation. Open{' '}
+          <button type="button" onClick={() => setTab('tab-active')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', color: 'inherit' }}>
+            My Requests
+          </button>{' '}
+          to confirm or report that it did not happen.
+        </div>
+      )}
+
+      {notif.items.length > 0 && (
+        <div className="stack" style={{ gap: '0.5rem', marginBottom: '1rem' }} role="status" aria-live="polite">
+          {notif.items.map((n) => (
+            <div key={n.id} className="form-card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.65rem 0.9rem', borderLeft: `4px solid ${n.needs_action ? 'var(--amber)' : 'var(--primary)'}` }}>
+              <div style={{ flex: 1, fontSize: '0.88rem' }}>
+                <strong style={{ display: 'block' }}>{n.title}</strong>
+                <span style={{ color: 'var(--ink-muted)' }}>Request #{n.request_id} &middot; {n.body}</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>{formatDateTime(n.created_at)}</span>
+              <button type="button" onClick={() => notif.dismiss(n.id)} className="btn btn-text" style={{ fontSize: '0.8rem' }}>
+                Dismiss
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -550,28 +640,96 @@ export default function RequesterDashboard() {
 
                   {(r.commitments || []).length > 0 && (
                     <div className="stack" style={{ gap: '0.45rem', margin: '0 0 0.75rem' }}>
-                      {r.commitments.map((c) => (
-                        <div
-                          key={c.donor_id}
-                          style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', fontSize: '0.84rem' }}
-                        >
-                          <strong style={{ flex: 1, minWidth: 120 }}>{c.donor_name}</strong>
-                          <span className={`badge ${c.status === 'donated' ? 'badge-teal' : c.status === 'failed' ? 'badge-neutral' : 'badge-amber'}`}>
-                            {c.status === 'donated'
-                              ? `Donated ${c.confirmed_units} unit(s)`
-                              : c.status === 'failed'
-                                ? 'Donation unsuccessful'
-                                : `Committed ${c.committed_units} unit(s) \u2014 not yet donated`}
-                          </span>
-                          {c.status === 'accepted' && (
-                            <>
+                      {r.commitments.map((c) => {
+                        const key = `${r.id}:${c.donor_id}`;
+                        const isLive = c.status === 'accepted' || c.status === 'claimed';
+                        const progressIdx = donorProgressIndex(c.donor_state);
+                        const acting = claimActing === key;
+                        return (
+                          <div
+                            key={c.donor_id}
+                            style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', fontSize: '0.84rem' }}
+                          >
+                            <strong style={{ flex: 1, minWidth: 120 }}>{c.donor_name}</strong>
+                            <span className={`badge ${c.status === 'donated' ? 'badge-teal' : c.status === 'claimed' ? 'badge-red' : c.status === 'failed' || c.status === 'disputed' ? 'badge-neutral' : 'badge-amber'}`}>
+                              {c.status === 'donated'
+                                ? `Donated ${c.confirmed_units} unit(s)`
+                                : c.status === 'failed'
+                                  ? 'Donation unsuccessful'
+                                  : c.status === 'disputed'
+                                    ? 'Did not happen \u2014 not counted'
+                                    : c.status === 'claimed'
+                                      ? `Claims to have donated ${c.claim?.units ?? c.committed_units} unit(s) \u2014 awaiting your confirmation`
+                                      : `Committed ${c.committed_units} unit(s) \u2014 not yet donated`}
+                            </span>
+
+                            {isLive && (
+                              <div style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }} aria-label="Donor progress">
+                                {DONOR_PROGRESS_STEPS.map((step, i) => (
+                                  <span
+                                    key={step.key}
+                                    className={`badge ${c.status === 'claimed' || i < progressIdx ? 'badge-teal' : i === progressIdx ? 'badge-amber' : 'badge-neutral'}`}
+                                    style={{ fontSize: '0.74rem' }}
+                                  >
+                                    {c.status === 'claimed' || i < progressIdx ? '\u2713 ' : ''}{step.label}
+                                  </span>
+                                ))}
+                                <span className={`badge ${c.status === 'claimed' ? 'badge-red' : 'badge-neutral'}`} style={{ fontSize: '0.74rem' }}>
+                                  Donation claimed
+                                </span>
+                                {c.donor_state_changed_at && (
+                                  <span style={{ fontSize: '0.74rem', color: 'var(--ink-muted)' }}>
+                                    updated {formatDateTime(c.donor_state_changed_at)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {c.status === 'claimed' && (
+                              <div style={{ flexBasis: '100%', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem' }}>
+                                <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem' }}>
+                                  {c.donor_name} says they donated
+                                  {c.claim?.hospital_name ? ` at ${c.claim.hospital_name}` : ''}
+                                  {c.claim?.donation_date ? ` on ${formatDate(c.claim.donation_date)}` : ''}.
+                                  This does not count until you confirm it.
+                                </p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                  <button
+                                    onClick={() => confirmClaim(r.id, c.donor_id, c.donor_name)}
+                                    disabled={acting}
+                                    className="btn btn-primary"
+                                    style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                                  >
+                                    {acting ? 'Saving...' : 'Confirm Received'}
+                                  </button>
+                                  <button
+                                    onClick={() => disputeClaim(r.id, c.donor_id, c.donor_name)}
+                                    disabled={acting}
+                                    className="btn btn-secondary"
+                                    style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                                  >
+                                    Did Not Happen
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {c.status === 'disputed' && !c.reported && (
+                              <p style={{ flexBasis: '100%', margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                                This claim was not counted. If something was wrong, report it so an administrator can look into it.
+                              </p>
+                            )}
+
+                            {isLive && (
                               <button
-                                onClick={() => toggleChat(`${r.id}:${c.donor_id}`)}
+                                onClick={() => toggleChat(key)}
                                 className="btn btn-secondary"
                                 style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem' }}
                               >
-                                {openChats[`${r.id}:${c.donor_id}`] ? 'Hide Chat' : 'Chat'}
+                                {openChats[key] ? 'Hide Chat' : 'Chat'}
                               </button>
+                            )}
+                            {c.status === 'accepted' && (
                               <button
                                 onClick={() => markDonorUnsuccessful(r.id, c.donor_id, c.donor_name)}
                                 className="btn btn-text"
@@ -579,20 +737,33 @@ export default function RequesterDashboard() {
                               >
                                 Mark unsuccessful
                               </button>
-                            </>
-                          )}
-                          {c.status === 'accepted' && openChats[`${r.id}:${c.donor_id}`] && (
-                            <div style={{ flexBasis: '100%', marginTop: '0.4rem' }}>
-                              <ChatPanel
-                                requestId={r.id}
-                                donorId={c.donor_id}
-                                currentUserId={user.id}
-                                onClose={() => toggleChat(`${r.id}:${c.donor_id}`)}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                            )}
+                            {c.status !== 'donated' && (
+                              c.reported ? (
+                                <span className="badge badge-neutral" style={{ fontSize: '0.74rem' }}>Problem reported</span>
+                              ) : (
+                                <button
+                                  onClick={() => setReportTarget({ requestId: r.id, donorId: c.donor_id, donorName: c.donor_name })}
+                                  className="btn btn-text"
+                                  style={{ fontSize: '0.8rem', color: 'var(--primary)' }}
+                                >
+                                  Report a Problem
+                                </button>
+                              )
+                            )}
+                            {isLive && openChats[key] && (
+                              <div style={{ flexBasis: '100%', marginTop: '0.4rem' }}>
+                                <ChatPanel
+                                  requestId={r.id}
+                                  donorId={c.donor_id}
+                                  currentUserId={user.id}
+                                  onClose={() => toggleChat(key)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1052,6 +1223,16 @@ export default function RequesterDashboard() {
             </div>
           </div>
         </div>
+      )}
+      {reportTarget && (
+        <ReportProblemModal
+          role="requester"
+          requestId={reportTarget.requestId}
+          donorId={reportTarget.donorId}
+          subject={`About ${reportTarget.donorName} on request #${reportTarget.requestId}`}
+          onClose={() => setReportTarget(null)}
+          onDone={(message) => { setReportTarget(null); setError(''); setSuccessMsg(message); loadRequests(); }}
+        />
       )}
     </DashboardLayout>
   );

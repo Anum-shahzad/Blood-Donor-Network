@@ -9,6 +9,7 @@ import VerificationBadge from '../components/VerificationBadge.jsx';
 import IdentityRequiredNotice from '../components/IdentityRequiredNotice.jsx';
 import NotificationPopups from '../components/NotificationPopups.jsx';
 import NotificationSettings from '../components/NotificationSettings.jsx';
+import ReportProblemModal from '../components/ReportProblemModal.jsx';
 import useDonorNotifications from '../lib/useDonorNotifications.js';
 import { enableSound, disablePush, registerServiceWorker, soundState as readSoundState } from '../lib/notifications.js';
 import {
@@ -33,7 +34,9 @@ const BLOOD_GROUPS = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
 const COOLDOWN_DAYS = 90;
 const MATCH_REFRESH_MS = 25 * 1000;
 
-const COMMITMENT_STATES = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING'];
+// DONATION_COMPLETED is the stored name of "Donation Claimed": the donor said they
+// donated and the commitment stays visible until the requester confirms it.
+const COMMITMENT_STATES = ['COMMITTED', 'EN_ROUTE', 'ARRIVED', 'DONATING', 'DONATION_COMPLETED'];
 
 function committedStateLabel(status) {
   if (!status) return 'Profile incomplete';
@@ -43,7 +46,7 @@ function committedStateLabel(status) {
     EN_ROUTE: 'En route to hospital',
     ARRIVED: 'Arrived at hospital',
     DONATING: 'Donating',
-    DONATION_COMPLETED: 'Donation completed',
+    DONATION_COMPLETED: 'Donation claimed \u2014 awaiting requester confirmation',
     COOLDOWN: 'In post-donation cooldown',
   };
   return labels[status] || status;
@@ -97,6 +100,10 @@ export default function DonorDashboard() {
 
   // Modal state
   const [logModalOpen, setLogModalOpen] = useState(false);
+  // true = the modal is claiming a donation for the active commitment (needs the
+  // requester's confirmation); false = logging a past donation made elsewhere.
+  const [claimMode, setClaimMode] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
   const [submittingDonation, setSubmittingDonation] = useState(false);
   const [logForm, setLogForm] = useState({
     donation_date: todayForDateInput(),
@@ -300,19 +307,45 @@ export default function DonorDashboard() {
     }
   }
 
+  // Past-donation history entries only. While committed, a donation is claimed
+  // from the commitment itself (after arriving), never logged here.
+  function openLogModal() {
+    if (profile?.committed_request_id) {
+      setSuccessMsg('');
+      setError('You have an active commitment. Use Mark as Donated on your commitment after you arrive; the requester has to confirm it before it counts.');
+      return;
+    }
+    setClaimMode(false);
+    setLogModalOpen(true);
+  }
+
+  function openClaimModal() {
+    setError('');
+    setClaimMode(true);
+    setLogForm((f) => ({ ...f, hospital_name: f.hospital_name || profile?.committed_request?.hospital_name || '' }));
+    setLogModalOpen(true);
+  }
+
   async function handleLogDonationSubmit(e) {
     e.preventDefault();
     setSubmittingDonation(true);
     setError('');
     try {
-      await apiPost('/api/donors/me/donations', {
-        ...logForm,
-        request_id: profile?.committed_request_id || undefined,
-      });
-      setLogModalOpen(false);
-      setSuccessMsg('Blood donation recorded! 90-day cooldown countdown has been activated.');
-      loadAll();
-      setTab('tab-cooldown');
+      if (claimMode) {
+        await apiPost('/api/donors/me/commitment/claim', {
+          ...logForm,
+          request_id: profile?.committed_request_id || undefined,
+        });
+        setLogModalOpen(false);
+        setSuccessMsg('Donation claim sent. It counts once the requester confirms it; your cooldown starts then.');
+        loadAll();
+      } else {
+        await apiPost('/api/donors/me/donations', { ...logForm });
+        setLogModalOpen(false);
+        setSuccessMsg('Blood donation recorded! 90-day cooldown countdown has been activated.');
+        loadAll();
+        setTab('tab-cooldown');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -616,7 +649,7 @@ export default function DonorDashboard() {
                 {daysElapsed !== null ? ` (${daysElapsed} days ago)` : ''}
               </p>
             </div>
-            <button onClick={() => setLogModalOpen(true)} className="btn btn-secondary">
+            <button onClick={openLogModal} className="btn btn-secondary">
               + Record a Donation
             </button>
           </div>
@@ -877,7 +910,7 @@ export default function DonorDashboard() {
             </div>
 
             <button
-              onClick={() => setLogModalOpen(true)}
+              onClick={openLogModal}
               className="btn btn-primary btn-block"
             >
               + Record New Donation Today
@@ -894,7 +927,7 @@ export default function DonorDashboard() {
                 </p>
               </div>
               <button
-                onClick={() => setLogModalOpen(true)}
+                onClick={openLogModal}
                 className="btn btn-secondary"
                 style={{ fontSize: '0.82rem', padding: '0.45rem 0.75rem' }}
               >
@@ -949,6 +982,22 @@ export default function DonorDashboard() {
       {/* ================================================================= */}
       {activeTab === 'tab-commitments' && (
         <div className="tab-content stack" style={{ gap: '1.5rem' }}>
+          {(profile?.recent_claims || []).filter((c) => c.status === 'disputed').map((c) => (
+            <div key={c.request_id} className="form-card" style={{ borderLeft: '4px solid var(--amber)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Donation not confirmed &mdash; request #{c.request_id}</h3>
+              <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.85rem', color: 'var(--ink-muted)' }}>
+                The requester marked your donation claim at {c.hospital_name} as not having happened, so it was not counted and no cooldown was started.
+                If you did donate, report a problem and an administrator will look into it.
+              </p>
+              {c.reported ? (
+                <span className="badge badge-neutral">Problem reported</span>
+              ) : (
+                <button onClick={() => setReportTarget({ requestId: c.request_id })} className="btn btn-secondary">
+                  Report a Problem
+                </button>
+              )}
+            </div>
+          ))}
           {!hasCommitment ? (
             <div className="form-card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem' }}>
               <HeartIcon size={40} />
@@ -1064,7 +1113,7 @@ export default function DonorDashboard() {
                   </div>
                   <div className={`journey-step ${['DONATION_COMPLETED'].includes(status) ? 'is-done' : status === 'ARRIVED' ? 'is-current' : ''}`}>
                     <CheckCircleIcon size={16} />
-                    <span>4. Donated</span>
+                    <span>4. Donation Claimed</span>
                   </div>
                 </div>
               </div>
@@ -1089,9 +1138,9 @@ export default function DonorDashboard() {
                   </button>
                 )}
 
-                {(status === 'ARRIVED' || status === 'EN_ROUTE' || status === 'COMMITTED') && (
+                {(status === 'ARRIVED' || status === 'DONATING') && (
                   <button
-                    onClick={() => setLogModalOpen(true)}
+                    onClick={openClaimModal}
                     className="btn btn-secondary"
                     style={{ borderColor: 'var(--success)', color: '#15803d' }}
                   >
@@ -1099,11 +1148,25 @@ export default function DonorDashboard() {
                   </button>
                 )}
 
+                {status === 'DONATION_COMPLETED' && (
+                  <span className="badge badge-amber" style={{ fontSize: '0.85rem', padding: '0.4rem 0.75rem' }}>
+                    <ClockIcon size={14} /> Waiting for the requester to confirm your donation
+                  </span>
+                )}
+
                 <button
                   onClick={() => setShowChat((v) => !v)}
                   className="btn btn-secondary"
                 >
                   {showChat ? 'Hide Chat' : 'Chat with Requester'}
+                </button>
+
+                <button
+                  onClick={() => setReportTarget({ requestId: profile.committed_request_id })}
+                  className="btn btn-text"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Report a Problem
                 </button>
 
                 {(status === 'EN_ROUTE' || status === 'ARRIVED' || status === 'DONATING') && (
@@ -1430,7 +1493,7 @@ export default function DonorDashboard() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                <DropletIcon size={20} /> Record Blood Donation
+                <DropletIcon size={20} /> {claimMode ? 'Mark as Donated' : 'Record Blood Donation'}
               </h3>
               <button
                 type="button"
@@ -1442,9 +1505,16 @@ export default function DonorDashboard() {
               </button>
             </div>
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
-              Recording a verified donation resets your <strong style={{ color: 'var(--amber)' }}>90-day medical cooldown countdown</strong> and updates your availability status.
-            </p>
+            {claimMode ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
+                This sends a <strong>donation claim</strong> to the requester. It is <strong>not counted</strong> and your{' '}
+                <strong style={{ color: 'var(--amber)' }}>90-day cooldown does not start</strong> until the requester confirms they received it.
+              </p>
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: 'var(--ink-muted)', marginBottom: '1.25rem' }}>
+                Recording a past donation resets your <strong style={{ color: 'var(--amber)' }}>90-day medical cooldown countdown</strong> and updates your availability status.
+              </p>
+            )}
 
             <form onSubmit={handleLogDonationSubmit} className="stack" style={{ gap: '1rem' }}>
               <label className="field">
@@ -1481,7 +1551,7 @@ export default function DonorDashboard() {
 
               <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button type="submit" disabled={submittingDonation} className="btn btn-primary" style={{ flex: 1 }}>
-                  {submittingDonation ? 'Saving...' : 'Save & Start 90-Day Cooldown'}
+                  {submittingDonation ? 'Saving...' : claimMode ? 'Send Donation Claim' : 'Save & Start 90-Day Cooldown'}
                 </button>
                 <button type="button" onClick={() => setLogModalOpen(false)} className="btn btn-secondary">
                   Cancel
@@ -1490,6 +1560,15 @@ export default function DonorDashboard() {
             </form>
           </div>
         </div>
+      )}
+      {reportTarget && (
+        <ReportProblemModal
+          role="donor"
+          requestId={reportTarget.requestId}
+          subject={`About request #${reportTarget.requestId}`}
+          onClose={() => setReportTarget(null)}
+          onDone={(message) => { setReportTarget(null); setError(''); setSuccessMsg(message); loadAll(); }}
+        />
       )}
     </DashboardLayout>
   );

@@ -7,6 +7,8 @@ import { getCompatibleDonorGroups } from '../services/matching/compatibility.js'
 import { rankDonorCandidates } from '../services/matching/donorMatching.js';
 import { acceptRequest, declineRequest, markCommitmentUnsuccessful } from '../services/donorCommitment.js';
 import { UNIT_PROGRESS_COLUMNS_SQL, withUnitProgress } from '../services/requestUnits.js';
+import { confirmDonationClaim, disputeDonationClaim } from '../services/donationClaims.js';
+import { createProblemReport, REQUESTER_REPORT_REASONS } from '../services/problemReports.js';
 import { parseIdParam, evaluateAlert } from '../services/alertRules.js';
 import { checkRadius, parseCoordinates } from '../services/geo.js';
 import { getVerificationSummaries } from '../services/verification/verificationService.js';
@@ -137,23 +139,43 @@ router.get('/mine', authorize('requester'), async (req, res, next) => {
     if (rows.length > 0) {
       const [commitRows] = await pool.query(
         `SELECT rr.request_id, rr.donor_id, rr.status, rr.committed_units, rr.confirmed_units,
-                u.name AS donor_name, dp.current_status AS donor_state
+                rr.claimed_at, rr.claim_donation_date, rr.claim_hospital_name, rr.claim_units, rr.claim_resolved_at,
+                u.name AS donor_name, dp.current_status AS donor_state, dp.status_changed_at AS donor_state_changed_at,
+                EXISTS (
+                  SELECT 1 FROM fraud_reports fr
+                   WHERE fr.reporter_id = ? AND fr.target_request_id = rr.request_id
+                     AND fr.related_donor_id = rr.donor_id AND fr.report_type = 'donation_dispute'
+                ) AS reported
            FROM request_responses rr
            JOIN users u ON u.id = rr.donor_id
            LEFT JOIN donor_profiles dp ON dp.user_id = rr.donor_id
-          WHERE rr.request_id IN (?) AND rr.status IN ('accepted', 'donated', 'failed')
+          WHERE rr.request_id IN (?) AND rr.status IN ('accepted', 'claimed', 'donated', 'failed', 'disputed')
           ORDER BY rr.responded_at ASC, rr.id ASC`,
-        [rows.map((r) => r.id)]
+        [req.user.id, rows.map((r) => r.id)]
       );
       for (const c of commitRows) {
         const list = commitmentsByRequest.get(c.request_id) || [];
+        const live = c.status === 'accepted' || c.status === 'claimed';
         list.push({
           donor_id: c.donor_id,
           donor_name: c.donor_name,
           status: c.status,
-          donor_state: c.status === 'accepted' ? c.donor_state : null,
+          // Live progress (Committed / En Route / Arrived / Donation Claimed).
+          // Only meaningful while the donor is still on this request.
+          donor_state: live ? c.donor_state : null,
+          donor_state_changed_at: live ? c.donor_state_changed_at : null,
           committed_units: Number(c.committed_units) || 0,
           confirmed_units: Number(c.confirmed_units) || 0,
+          claim: c.status === 'claimed' || c.status === 'disputed'
+            ? {
+                claimed_at: c.claimed_at,
+                donation_date: c.claim_donation_date,
+                hospital_name: c.claim_hospital_name,
+                units: Number(c.claim_units) || Number(c.committed_units) || 0,
+                resolved_at: c.claim_resolved_at,
+              }
+            : null,
+          reported: Boolean(c.reported),
         });
         commitmentsByRequest.set(c.request_id, list);
       }
@@ -457,6 +479,67 @@ router.post('/:id/commitments/:donorId/unsuccessful', authorize('requester'), as
   } catch (err) {
     next(err);
   }
+});
+
+// POST /api/requests/:id/commitments/:donorId/confirm — "Confirm Received". Finalises the
+// donor's pending claim: records the donation, counts the units, and starts the donor's
+// cooldown. Only the requester who owns the request can do this (404 for anyone else).
+router.post('/:id/commitments/:donorId/confirm', authorize('requester'), async (req, res, next) => {
+  try {
+    const requestId = parseIdParam(req.params.id);
+    const donorId = parseIdParam(req.params.donorId);
+    if (requestId === null || donorId === null) {
+      return res.status(400).json({ error: 'Invalid parameters' });
+    }
+    const result = await confirmDonationClaim({ requestId, donorId, requesterId: req.user.id });
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/requests/:id/commitments/:donorId/dispute — "Did Not Happen". The claim is kept
+// for review but never counted as a donation. Same ownership rule as confirm.
+router.post('/:id/commitments/:donorId/dispute', authorize('requester'), async (req, res, next) => {
+  try {
+    const requestId = parseIdParam(req.params.id);
+    const donorId = parseIdParam(req.params.donorId);
+    if (requestId === null || donorId === null) {
+      return res.status(400).json({ error: 'Invalid parameters' });
+    }
+    const result = await disputeDonationClaim({ requestId, donorId, requesterId: req.user.id });
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/requests/:id/report-problem — Report a Problem about a donor on the requester's
+// own request. Saved in fraud_reports for admin review.
+router.post('/:id/report-problem', authorize('requester'), async (req, res, next) => {
+  try {
+    const requestId = parseIdParam(req.params.id);
+    const donorId = parseIdParam(String(req.body?.donor_id ?? ''));
+    if (requestId === null || donorId === null) {
+      return res.status(400).json({ error: 'Invalid parameters' });
+    }
+    const result = await createProblemReport({
+      reporterId: req.user.id,
+      reporterRole: 'requester',
+      requestId,
+      donorId,
+      reason: req.body?.reason,
+      details: req.body?.details,
+    });
+    res.status(201).json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/requests/report-reasons — the reasons a requester can choose from
+router.get('/report-reasons', authorize('requester'), (req, res) => {
+  res.json({ reasons: REQUESTER_REPORT_REASONS });
 });
 
 function parseRequestId(req, res) {

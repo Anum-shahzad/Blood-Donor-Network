@@ -35,6 +35,7 @@ export default function AdminDashboard() {
   const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
+  const [reportEvents, setReportEvents] = useState({});
 
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -128,10 +129,27 @@ export default function AdminDashboard() {
   async function updateReportStatus(reportId, status) {
     setError('');
     setSuccessMsg('');
+    // The note goes into the report's audit trail with the admin's name.
+    const note = window.prompt(`Note for the audit trail (optional) \u2014 marking report #${reportId} as ${status}:`, '');
+    if (note === null) return;
     try {
-      await apiPatch(`/api/admin/fraud-reports/${reportId}`, { status });
+      await apiPatch(`/api/admin/fraud-reports/${reportId}`, { status, note });
       setSuccessMsg(`Report #${reportId} updated to ${status}.`);
       loadFraudReports();
+      setReportEvents((m) => { const { [reportId]: _gone, ...rest } = m; return rest; });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function toggleReportHistory(reportId) {
+    if (reportEvents[reportId]) {
+      setReportEvents((m) => { const { [reportId]: _gone, ...rest } = m; return rest; });
+      return;
+    }
+    try {
+      const data = await apiGet(`/api/admin/fraud-reports/${reportId}/events`);
+      setReportEvents((m) => ({ ...m, [reportId]: data.events || [] }));
     } catch (err) {
       setError(err.message);
     }
@@ -631,18 +649,74 @@ export default function AdminDashboard() {
                     fraudData.reports.map((r) => (
                       <tr key={r.id}>
                         <td><span className="badge badge-amber">{r.report_type}</span></td>
-                        <td>{r.details}</td>
+                        <td style={{ whiteSpace: 'pre-wrap' }}>
+                          {r.details}
+                          {r.report_type === 'donation_dispute' && (
+                            <div style={{ marginTop: '0.4rem', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+                              Reporter: {r.reporter_name || 'unknown'}{r.reporter_role ? ` (${r.reporter_role})` : ''}
+                              {' \u00b7 '}Request #{r.target_request_id}{r.request_hospital ? ` at ${r.request_hospital}` : ''}
+                              {r.donor_name ? ` \u00b7 Donor: ${r.donor_name}` : ''}
+                              {r.donor_response_status ? ` \u00b7 Donor response: ${r.donor_response_status}` : ''}
+                              {r.claimed_at ? ` \u00b7 Claimed ${formatDate(r.claimed_at)}${r.claim_units ? ` (${r.claim_units} unit)` : ''}` : ''}
+                              {r.donor_response_status === 'donated' ? ' \u00b7 Confirmed by requester' : r.claimed_at ? ' \u00b7 Not counted as a donation' : ''}
+                            </div>
+                          )}
+                          {r.admin_note && (
+                            <div style={{ marginTop: '0.4rem', fontSize: '0.78rem' }}>
+                              Admin note{r.reviewed_by_name ? ` (${r.reviewed_by_name})` : ''}: {r.admin_note}
+                            </div>
+                          )}
+                          {reportEvents[r.id] && (
+                            <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem', fontSize: '0.76rem', color: 'var(--ink-muted)' }}>
+                              {reportEvents[r.id].map((e) => (
+                                <li key={e.id}>
+                                  {formatDate(e.created_at)} &middot; {e.action === 'filed' ? 'Filed' : `${e.from_status} \u2192 ${e.to_status}`}
+                                  {e.actor_name ? ` by ${e.actor_name}` : ''}{e.note && e.action !== 'filed' ? ` \u2014 ${e.note}` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
                         <td>{r.target_user_name || r.request_hospital || 'Network entity'}</td>
                         <td>{formatDate(r.created_at)}</td>
                         <td><span className="badge badge-neutral">{r.status}</span></td>
                         <td>
-                          <button
-                            onClick={() => updateReportStatus(r.id, 'resolved')}
-                            className="btn btn-secondary"
-                            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                          >
-                            Resolve
-                          </button>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                            {r.status === 'pending' && (
+                              <button
+                                onClick={() => updateReportStatus(r.id, 'investigating')}
+                                className="btn btn-secondary"
+                                style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                              >
+                                Investigate
+                              </button>
+                            )}
+                            {(r.status === 'pending' || r.status === 'investigating') && (
+                              <>
+                                <button
+                                  onClick={() => updateReportStatus(r.id, 'resolved')}
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                                >
+                                  Resolve
+                                </button>
+                                <button
+                                  onClick={() => updateReportStatus(r.id, 'dismissed')}
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                                >
+                                  Dismiss
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => toggleReportHistory(r.id)}
+                              className="btn btn-text"
+                              style={{ fontSize: '0.75rem' }}
+                            >
+                              {reportEvents[r.id] ? 'Hide History' : 'History'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

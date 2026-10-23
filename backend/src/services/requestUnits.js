@@ -3,8 +3,10 @@
 //
 //   required   = requests.units_needed
 //   donated    = SUM(confirmed_units) of responses with status 'donated'
-//   committed  = SUM(committed_units) of responses with status 'accepted'
-//                (promised, NOT donated — never counted as donated)
+//   committed  = SUM(committed_units) of responses with status 'accepted' or
+//                'claimed' (promised, or claimed and awaiting the requester's
+//                confirmation — NOT donated, never counted as donated until
+//                the requester confirms; the units stay held meanwhile)
 //   remaining  = required - donated          (what is still outstanding)
 //   open       = remaining - committed       (what a new donor may still take)
 //
@@ -16,13 +18,13 @@ export const UNIT_PROGRESS_COLUMNS_SQL = `
   COALESCE((SELECT SUM(rr.confirmed_units) FROM request_responses rr
              WHERE rr.request_id = r.id AND rr.status = 'donated'), 0) AS units_donated,
   COALESCE((SELECT SUM(rr.committed_units) FROM request_responses rr
-             WHERE rr.request_id = r.id AND rr.status = 'accepted'), 0) AS units_committed`;
+             WHERE rr.request_id = r.id AND rr.status IN ('accepted', 'claimed')), 0) AS units_committed`;
 
 // WHERE fragment: the request still has units nobody has donated or promised.
 export const OPEN_UNITS_CONDITION_SQL = `
   r.units_needed > (
     SELECT COALESCE(SUM(CASE WHEN rr.status = 'donated' THEN rr.confirmed_units
-                             WHEN rr.status = 'accepted' THEN rr.committed_units
+                             WHEN rr.status IN ('accepted', 'claimed') THEN rr.committed_units
                              ELSE 0 END), 0)
       FROM request_responses rr WHERE rr.request_id = r.id)`;
 
@@ -55,7 +57,7 @@ export async function loadUnitProgress(conn, requestId, unitsNeeded) {
   const [rows] = await conn.query(
     `SELECT
        COALESCE(SUM(CASE WHEN status = 'donated' THEN confirmed_units ELSE 0 END), 0) AS units_donated,
-       COALESCE(SUM(CASE WHEN status = 'accepted' THEN committed_units ELSE 0 END), 0) AS units_committed
+       COALESCE(SUM(CASE WHEN status IN ('accepted', 'claimed') THEN committed_units ELSE 0 END), 0) AS units_committed
      FROM request_responses WHERE request_id = ?`,
     [requestId]
   );

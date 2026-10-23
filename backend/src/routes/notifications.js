@@ -3,21 +3,48 @@ import { createHash } from 'node:crypto';
 import { pool } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { parseIdParam } from '../services/alertRules.js';
-import { getUnreadForDonor, markRead, markAcknowledged } from '../services/notifications/notificationService.js';
+import { getUnreadForDonor, getUnreadForRequester, markRead, markAcknowledged } from '../services/notifications/notificationService.js';
 import { validateSubscription } from '../services/notifications/pushEndpoints.js';
 import { getPublicKey, isPushConfigured } from '../services/notifications/webPush.js';
 
 const router = Router();
 
-// Donor-only: notifications are addressed to donors, and every query below is
-// scoped to req.user.id, so one donor can never read or change another's.
-router.use(authenticate, authorize('donor'));
+// Every query below is scoped to req.user.id, so nobody can read or change
+// another user's notifications. Urgent alerts and push devices are donor-only;
+// donor-progress / donation-claim notices are requester-only (see the
+// /requester routes). The role check is per route.
+router.use(authenticate);
+const donorOnly = authorize('donor');
+const requesterOnly = authorize('requester');
 
 const MAX_SUBSCRIPTIONS_PER_USER = 5;
 const hashEndpoint = (endpoint) => createHash('sha256').update(endpoint).digest('hex');
 
+// GET /api/notifications/requester/unread — donor progress and donation claims on the
+// requester's own requests, polled by the requester dashboard
+router.get('/requester/unread', requesterOnly, async (req, res, next) => {
+  try {
+    const notifications = await getUnreadForRequester(req.user.id);
+    res.json({ notifications });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/notifications/requester/read   { ids: [1,2] } — dismissed
+router.post('/requester/read', requesterOnly, async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((v) => parseIdParam(String(v))).filter(Boolean).slice(0, 50) : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'ids is required' });
+    const updated = await markRead(req.user.id, ids);
+    res.json({ status: 'ok', updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/notifications/unread — polled by the dashboard
-router.get('/unread', async (req, res, next) => {
+router.get('/unread', donorOnly, async (req, res, next) => {
   try {
     const notifications = await getUnreadForDonor(req.user.id);
     res.json({ notifications });
@@ -27,7 +54,7 @@ router.get('/unread', async (req, res, next) => {
 });
 
 // POST /api/notifications/read   { ids: [1,2] } — dismissed
-router.post('/read', async (req, res, next) => {
+router.post('/read', donorOnly, async (req, res, next) => {
   try {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((v) => parseIdParam(String(v))).filter(Boolean).slice(0, 50) : [];
     if (ids.length === 0) return res.status(400).json({ error: 'ids is required' });
@@ -39,7 +66,7 @@ router.post('/read', async (req, res, next) => {
 });
 
 // POST /api/notifications/:id/acknowledge — the donor opened or acted on it
-router.post('/:id/acknowledge', async (req, res, next) => {
+router.post('/:id/acknowledge', donorOnly, async (req, res, next) => {
   try {
     const id = parseIdParam(req.params.id);
     if (id === null) return res.status(400).json({ error: 'Invalid notification id' });
@@ -52,7 +79,7 @@ router.post('/:id/acknowledge', async (req, res, next) => {
 });
 
 // GET /api/notifications/push/config — is Web Push available, and the PUBLIC key
-router.get('/push/config', async (req, res, next) => {
+router.get('/push/config', donorOnly, async (req, res, next) => {
   try {
     const [rows] = await pool.query('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?', [req.user.id]);
     res.json({
@@ -66,7 +93,7 @@ router.get('/push/config', async (req, res, next) => {
 });
 
 // POST /api/notifications/push/subscribe — save this browser's subscription
-router.post('/push/subscribe', async (req, res, next) => {
+router.post('/push/subscribe', donorOnly, async (req, res, next) => {
   try {
     if (!isPushConfigured()) return res.status(503).json({ error: 'Web Push is not configured on the server' });
     const v = validateSubscription(req.body);
@@ -97,7 +124,7 @@ router.post('/push/subscribe', async (req, res, next) => {
 });
 
 // POST /api/notifications/push/unsubscribe { endpoint } — remove THIS device only
-router.post('/push/unsubscribe', async (req, res, next) => {
+router.post('/push/unsubscribe', donorOnly, async (req, res, next) => {
   try {
     const endpoint = req.body?.endpoint;
     if (typeof endpoint !== 'string' || endpoint.length > 2048) {

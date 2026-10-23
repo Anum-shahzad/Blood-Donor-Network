@@ -176,7 +176,7 @@ export async function getUnreadForDonor(donorId, { limit = 10 } = {}) {
         AND NOT EXISTS (
           SELECT 1 FROM request_responses rr
            WHERE rr.request_id = r.id AND rr.donor_id = n.user_id
-             AND rr.status IN ('declined', 'accepted', 'donated', 'failed', 'cancelled'))
+             AND rr.status IN ('declined', 'accepted', 'claimed', 'donated', 'failed', 'cancelled', 'disputed'))
       ORDER BY n.id DESC
       LIMIT ?`,
     [donorId, NOTIFICATION_TYPE_URGENT, defaultTtlHours(), Math.min(Math.max(Number(limit) || 10, 1), 25)]
@@ -228,4 +228,115 @@ export async function markAcknowledged(userId, id) {
     [userId, id]
   );
   return r.affectedRows;
+}
+
+// ---------------------------------------------------------------------------
+// Requester notifications: donor progress and donation claims.
+//
+// These reuse the same `notifications` table, the unique dedupe_key and the
+// read/dismiss handling as the donor alerts above. A row is addressed to the
+// REQUESTER who owns the request, and is written inside the same transaction
+// as the donor's status change, so a status change and its notification are
+// saved together or not at all.
+//
+//   type 'donor_status'    donor moved to EN_ROUTE / ARRIVED
+//   type 'donation_claim'  donor claimed a donation and it awaits confirmation
+//
+// dedupe_key = <type>:<requestId>:<donorId>:<commitmentStartEpoch>:<STATE>
+// The key is what makes "one notification per status change" true: a repeated
+// call, a retry or a double click hits the unique key and is ignored, while a
+// donor who cancels and later re-accepts the same request has a new
+// commitment start time and so a new set of keys. The donor id and state are
+// read back out of the key, so no schema change is needed.
+// Push is never used for these (channel_push = FALSE): requesters do not
+// register push devices; they get the in-app card, sound and, if allowed,
+// the browser notification.
+// ---------------------------------------------------------------------------
+export const NOTIFICATION_TYPE_DONOR_STATUS = 'donor_status';
+export const NOTIFICATION_TYPE_DONATION_CLAIM = 'donation_claim';
+const REQUESTER_NOTIFICATION_TYPES = [NOTIFICATION_TYPE_DONOR_STATUS, NOTIFICATION_TYPE_DONATION_CLAIM];
+
+// Runs on the caller's transaction connection. Returns { created, notificationId }.
+export async function createRequesterNotification(conn, { requesterId, requestId, donorId, type, state, commitmentStartedAt }) {
+  const epoch = commitmentStartedAt ? Math.floor(new Date(commitmentStartedAt).getTime() / 1000) || 0 : 0;
+  const dedupeKey = `${type}:${requestId}:${donorId}:${epoch}:${state}`;
+  const [result] = await conn.query(
+    `INSERT IGNORE INTO notifications
+       (user_id, type, request_id, dedupe_key, channel_inapp, channel_browser, channel_push)
+     VALUES (?, ?, ?, ?, TRUE, TRUE, FALSE)`,
+    [requesterId, type, requestId, dedupeKey]
+  );
+  if (result.affectedRows === 0) return { created: false, reason: 'duplicate' };
+  return { created: true, notificationId: result.insertId };
+}
+
+function describeRequesterNotification(type, state, donorName, hospital) {
+  if (type === NOTIFICATION_TYPE_DONATION_CLAIM) {
+    return {
+      title: `${donorName} says they donated`,
+      body: `Please confirm at ${hospital}: Confirm Received or Did Not Happen.`,
+    };
+  }
+  if (state === 'ARRIVED') {
+    return { title: `${donorName} has arrived`, body: `Your donor is at ${hospital}.` };
+  }
+  if (state === 'EN_ROUTE') {
+    return { title: `${donorName} is on the way`, body: `Your donor is en route to ${hospital}.` };
+  }
+  return { title: `${donorName} updated their status`, body: hospital };
+}
+
+// What the requester dashboard polls. Scoped to the requester's own requests
+// (the JOIN on requests.requester_id), so nobody sees another requester's rows.
+// A donation_claim card disappears by itself once the claim is resolved.
+export async function getUnreadForRequester(requesterId, { limit = 10 } = {}) {
+  const [rows] = await pool.query(
+    `SELECT n.id, n.type, n.request_id, n.dedupe_key, n.created_at, r.hospital_name
+       FROM notifications n
+       JOIN requests r ON r.id = n.request_id AND r.requester_id = n.user_id
+      WHERE n.user_id = ?
+        AND n.type IN (?)
+        AND n.read_at IS NULL
+        AND n.created_at > NOW() - INTERVAL ${Number(FEED_WINDOW_HOURS)} HOUR
+      ORDER BY n.id DESC
+      LIMIT ?`,
+    [requesterId, REQUESTER_NOTIFICATION_TYPES, Math.min(Math.max(Number(limit) || 10, 1), 25)]
+  );
+  if (rows.length === 0) return [];
+
+  const parsed = rows.map((row) => {
+    const [, , donorId, , state] = String(row.dedupe_key).split(':');
+    return { row, donorId: Number(donorId), state };
+  });
+
+  const donorIds = [...new Set(parsed.map((p) => p.donorId))];
+  const [nameRows] = await pool.query('SELECT id, name FROM users WHERE id IN (?)', [donorIds]);
+  const names = new Map(nameRows.map((u) => [u.id, u.name]));
+
+  const pairs = parsed.map((p) => [p.row.request_id, p.donorId]);
+  const [respRows] = await pool.query(
+    'SELECT request_id, donor_id, status FROM request_responses WHERE (request_id, donor_id) IN (?)',
+    [pairs]
+  );
+  const respStatus = new Map(respRows.map((r) => [`${r.request_id}:${r.donor_id}`, r.status]));
+
+  const out = [];
+  for (const { row, donorId, state } of parsed) {
+    if (row.type === NOTIFICATION_TYPE_DONATION_CLAIM && respStatus.get(`${row.request_id}:${donorId}`) !== 'claimed') {
+      continue; // already confirmed / disputed: nothing left to ask
+    }
+    const content = describeRequesterNotification(row.type, state, names.get(donorId) || 'Your donor', row.hospital_name);
+    out.push({
+      id: row.id,
+      type: row.type,
+      request_id: row.request_id,
+      donor_id: donorId,
+      state,
+      created_at: row.created_at,
+      title: content.title,
+      body: content.body,
+      needs_action: row.type === NOTIFICATION_TYPE_DONATION_CLAIM,
+    });
+  }
+  return out;
 }

@@ -11,6 +11,9 @@ import {
   DEFAULT_ALERT_RADIUS_KM, MIN_ALERT_RADIUS_KM, MAX_ALERT_RADIUS_KM, checkRadius, parseCoordinates,
 } from '../services/geo.js';
 import { cancelCommitment, advanceCommitmentStep, recordDonation, reportDonationUnsuccessful } from '../services/donorCommitment.js';
+import { claimDonation } from '../services/donationClaims.js';
+import { createProblemReport, DONOR_REPORT_REASONS } from '../services/problemReports.js';
+import { parseIdParam } from '../services/alertRules.js';
 import { UNIT_PROGRESS_COLUMNS_SQL, OPEN_UNITS_CONDITION_SQL, withUnitProgress } from '../services/requestUnits.js';
 
 const router = Router();
@@ -75,28 +78,53 @@ router.get('/me', async (req, res, next) => {
                   WHEN r.status = 'donor_accepted'
                    AND EXISTS (
                      SELECT 1 FROM request_responses rr
-                     WHERE rr.request_id = r.id AND rr.donor_id = ? AND rr.status = 'accepted'
+                     WHERE rr.request_id = r.id AND rr.donor_id = ? AND rr.status IN ('accepted', 'claimed')
                    )
                   THEN r.contact_phone
                   ELSE NULL
                 END AS contact_phone,
                 r.attendant_name,
                 (SELECT rr2.committed_units FROM request_responses rr2
-                  WHERE rr2.request_id = r.id AND rr2.donor_id = ? AND rr2.status = 'accepted') AS my_committed_units,
+                  WHERE rr2.request_id = r.id AND rr2.donor_id = ? AND rr2.status IN ('accepted', 'claimed')) AS my_committed_units,
+                (SELECT rr3.status FROM request_responses rr3
+                  WHERE rr3.request_id = r.id AND rr3.donor_id = ?) AS my_response_status,
                 ${UNIT_PROGRESS_COLUMNS_SQL},
                 u.name AS requester_name
          FROM requests r
          JOIN users u ON u.id = r.requester_id
          WHERE r.id = ?`,
-        [req.user.id, req.user.id, donor.committed_request_id]
+        [req.user.id, req.user.id, req.user.id, donor.committed_request_id]
       );
       committedRequest = reqRows[0] ? withUnitProgress(reqRows[0]) : null;
     }
+
+    // Claims still waiting for the requester, and claims the requester answered
+    // "Did Not Happen" in the last 30 days (so the donor can report a problem).
+    // Neither is counted as a completed donation anywhere.
+    const [claimRows] = await pool.query(
+      `SELECT rr.request_id, rr.status, rr.claimed_at, rr.claim_resolved_at, rr.claim_units,
+              r.hospital_name, r.blood_group AS request_blood_group,
+              EXISTS (
+                SELECT 1 FROM fraud_reports fr
+                 WHERE fr.reporter_id = rr.donor_id AND fr.target_request_id = rr.request_id
+                   AND fr.related_donor_id = rr.donor_id AND fr.report_type = 'donation_dispute'
+              ) AS reported
+         FROM request_responses rr
+         JOIN requests r ON r.id = rr.request_id
+        WHERE rr.donor_id = ?
+          AND (rr.status = 'claimed'
+               OR (rr.status = 'disputed' AND rr.claim_resolved_at > NOW() - INTERVAL 30 DAY))
+        ORDER BY rr.claimed_at DESC
+        LIMIT 10`,
+      [req.user.id]
+    );
+    const recentClaims = claimRows.map((c) => ({ ...c, reported: Boolean(c.reported) }));
 
     const verification = (await getVerificationSummaries([req.user.id])).get(Number(req.user.id));
 
     res.json({
       ...donor,
+      recent_claims: recentClaims,
       // Derived from approved verification records only. The legacy column is
       // never read; kept in the payload (always false) for API compatibility.
       is_blood_group_verified: false,
@@ -156,7 +184,7 @@ router.get('/matches', async (req, res, next) => {
          AND NOT EXISTS (
            SELECT 1 FROM request_responses rr
            WHERE rr.request_id = r.id AND rr.donor_id = ?
-             AND rr.status IN ('declined', 'accepted', 'donated', 'failed', 'cancelled')
+             AND rr.status IN ('declined', 'accepted', 'claimed', 'donated', 'failed', 'cancelled', 'disputed')
          )
        ORDER BY
          FIELD(r.urgency, 'critical', 'high', 'medium', 'low'),
@@ -230,7 +258,10 @@ router.get('/me/donations', async (req, res, next) => {
   }
 });
 
-// POST /api/donors/me/donations — log a donation & activate 90-day cooldown (all rules enforced in recordDonation)
+// POST /api/donors/me/donations — log a PAST donation made elsewhere & activate its
+// 90-day cooldown (all rules enforced in recordDonation). It can no longer be used to
+// record a donation for a request: that is POST /me/commitment/claim and needs the
+// requester's confirmation.
 router.post('/me/donations', async (req, res, next) => {
   try {
     const { donation_date, hospital_name, recipient_case, units, request_id } = req.body || {};
@@ -262,7 +293,50 @@ router.post('/me/donations', async (req, res, next) => {
   }
 });
 
-// PATCH /api/donors/me/commitment/step — advance commitment journey (EN_ROUTE, ARRIVED, DONATING)
+// POST /api/donors/me/commitment/claim — "Mark as Donated". Records a PENDING claim for
+// the donor's own committed request (only allowed after Arrived). Nothing is counted
+// until the requester confirms: no fulfilled request, no units sourced, no cooldown.
+router.post('/me/commitment/claim', async (req, res, next) => {
+  try {
+    const { donation_date, hospital_name, recipient_case, units, request_id } = req.body || {};
+    if (!donation_date) {
+      return res.status(400).json({ error: 'donation_date is required' });
+    }
+    const result = await claimDonation(req.user.id, { donation_date, hospital_name, recipient_case, units, request_id });
+    res.status(201).json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/donors/me/report-problem — Report a Problem about a request the donor took
+// part in (e.g. the requester disputes a donation that really happened).
+router.post('/me/report-problem', async (req, res, next) => {
+  try {
+    const requestId = parseIdParam(String(req.body?.request_id ?? ''));
+    if (requestId === null) {
+      return res.status(400).json({ error: 'request_id is required' });
+    }
+    const result = await createProblemReport({
+      reporterId: req.user.id,
+      reporterRole: 'donor',
+      requestId,
+      donorId: req.user.id,
+      reason: req.body?.reason,
+      details: req.body?.details,
+    });
+    res.status(201).json({ status: 'ok', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/donors/report-reasons — the reasons a donor can choose from
+router.get('/report-reasons', (req, res) => {
+  res.json({ reasons: DONOR_REPORT_REASONS });
+});
+
+// PATCH /api/donors/me/commitment/step — advance commitment journey (EN_ROUTE, then ARRIVED)
 router.patch('/me/commitment/step', async (req, res, next) => {
   try {
     const { step } = req.body;
