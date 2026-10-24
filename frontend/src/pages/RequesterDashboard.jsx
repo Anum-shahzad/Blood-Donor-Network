@@ -1094,10 +1094,10 @@ export default function RequesterDashboard() {
               {radarMatches.matches?.length === 0 ? (
                 <div className="form-card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
                   <RadarIcon size={36} />
-                  <p className="empty-state" style={{ marginTop: '0.75rem' }}>
+                  <p className="empty-state" style={{ marginTop: '0.75rem', marginLeft: 'auto', marginRight: 'auto' }}>
                     No currently available donors matching this request nearby.
                   </p>
-                  <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', marginLeft: 'auto', marginRight: 'auto' }}>
                     Donors in medical cooldown or paused availability are automatically excluded for safety.
                   </p>
                 </div>
