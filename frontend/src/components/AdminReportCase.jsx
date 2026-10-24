@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, apiPatch } from '../api/client.js';
 import { formatDate, formatDateTime } from '../lib/format.js';
+import { confirmDialog } from './ConfirmDialog.jsx';
 
 const box = { border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', padding: '0.75rem 0.9rem' };
 const small = { fontSize: '0.8rem', color: 'var(--ink-muted)' };
@@ -68,14 +69,20 @@ export default function AdminReportCase({ reportId, onClose, onChanged }) {
     `Status changed to ${statusChoice}.`
   );
 
-  function submitDecision() {
+  async function submitDecision() {
     const target = data?.target_user?.name || 'the reported user';
     const label = decision === 'dismiss'
       ? 'Dismiss this report? The reporter will be told it was reviewed.'
       : decision === 'warn'
         ? `Send a warning to ${target}? They will see your reason.`
         : `Suspend ${target} ${suspendKind === 'permanent' ? 'permanently' : `for ${days} day(s)`}? They will be blocked immediately and will see your reason.`;
-    if (!window.confirm(label)) return;
+    const ok = await confirmDialog({
+      title: decision === 'dismiss' ? 'Dismiss report?' : decision === 'warn' ? 'Send warning?' : 'Suspend user?',
+      message: label,
+      confirmLabel: decision === 'dismiss' ? 'Dismiss' : decision === 'warn' ? 'Send warning' : 'Suspend',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     const body = { decision, reason };
     if (decision === 'suspend') {
       if (suspendKind === 'permanent') body.permanent = true;
@@ -87,8 +94,14 @@ export default function AdminReportCase({ reportId, onClose, onChanged }) {
     }, 'Decision saved and the affected users were notified.');
   }
 
-  function lift() {
-    if (!window.confirm(`Lift the suspension on ${data.target_user.name}?`)) return;
+  async function lift() {
+    const ok = await confirmDialog({
+      title: 'Lift suspension?',
+      message: `Lift the suspension on ${data.target_user.name}? They will be notified.`,
+      confirmLabel: 'Lift suspension',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     run(async () => {
       await apiPost(`/api/admin/moderation/users/${data.target_user.id}/reinstate`, { reason: reinstateReason });
       setReinstateReason('');

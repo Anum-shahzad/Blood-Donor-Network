@@ -8,11 +8,13 @@ import AdminDashboard from './pages/AdminDashboard.jsx';
 import Emergency from './pages/Emergency.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ScrollToHash from './components/ScrollToHash.jsx';
+import ConfirmDialogHost from './components/ConfirmDialog.jsx';
 
 export default function App() {
   return (
     <>
       <ScrollToHash />
+      <ConfirmDialogHost />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />

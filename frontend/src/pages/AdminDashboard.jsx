@@ -7,6 +7,7 @@ import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
 import AdminRequestEvidence from '../components/AdminRequestEvidence.jsx';
 import AdminReportCase from '../components/AdminReportCase.jsx';
+import { confirmDialog, promptDialog } from '../components/ConfirmDialog.jsx';
 import {
   GaugeIcon,
   ShieldCheckIcon,
@@ -116,7 +117,13 @@ export default function AdminDashboard() {
   }
 
   async function rejectRequest(id) {
-    if (!window.confirm(`Reject and cancel request #${id}? This marks it fraudulent or unverified.`)) return;
+    const ok = await confirmDialog({
+      title: `Reject request #${id}?`,
+      message: 'This cancels the request and marks it fraudulent or unverified.',
+      confirmLabel: 'Reject & cancel',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     setError('');
     setSuccessMsg('');
     try {
@@ -133,7 +140,12 @@ export default function AdminDashboard() {
     setError('');
     setSuccessMsg('');
     // The note goes into the report's audit trail with the admin's name.
-    const note = window.prompt(`Note for the audit trail (optional) \u2014 marking report #${reportId} as ${status}:`, '');
+    const note = await promptDialog({
+      title: `Mark report #${reportId} as ${status}`,
+      message: 'This note is saved in the report\u2019s audit trail with your name.',
+      inputLabel: 'Note (optional)',
+      confirmLabel: 'Save',
+    });
     if (note === null) return;
     try {
       await apiPatch(`/api/admin/fraud-reports/${reportId}`, { status, note });

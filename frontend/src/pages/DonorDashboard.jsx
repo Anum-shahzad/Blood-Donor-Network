@@ -10,6 +10,7 @@ import IdentityRequiredNotice from '../components/IdentityRequiredNotice.jsx';
 import NotificationPopups from '../components/NotificationPopups.jsx';
 import NotificationSettings from '../components/NotificationSettings.jsx';
 import ReportProblemModal from '../components/ReportProblemModal.jsx';
+import { confirmDialog } from '../components/ConfirmDialog.jsx';
 import useDonorNotifications from '../lib/useDonorNotifications.js';
 import { enableSound, disablePush, registerServiceWorker, soundState as readSoundState } from '../lib/notifications.js';
 import {
@@ -1171,10 +1172,14 @@ export default function DonorDashboard() {
 
                 {(status === 'EN_ROUTE' || status === 'ARRIVED' || status === 'DONATING') && (
                   <button
-                    onClick={() => {
-                      if (window.confirm('Report that your donation did not happen or was unsuccessful? Your units will be opened up for other donors.')) {
-                        reportUnsuccessful();
-                      }
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: 'Donation unsuccessful?',
+                        message: 'Report that your donation did not happen or was unsuccessful? Your units will be opened up for other donors.',
+                        confirmLabel: 'Release my units',
+                        cancelLabel: 'Go back',
+                      });
+                      if (ok) reportUnsuccessful();
                     }}
                     disabled={reportingUnsuccessful}
                     className="btn btn-text"
@@ -1186,10 +1191,14 @@ export default function DonorDashboard() {
 
                 {canCancel && (
                   <button
-                    onClick={() => {
-                      if (window.confirm('Cancel your commitment? The emergency request will immediately be reopened for other donors.')) {
-                        cancelCommitment();
-                      }
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: 'Cancel your commitment?',
+                        message: 'The emergency request will immediately be reopened for other donors.',
+                        confirmLabel: 'Yes, cancel commitment',
+                        cancelLabel: 'Keep commitment',
+                      });
+                      if (ok) cancelCommitment();
                     }}
                     disabled={cancelling}
                     className="btn btn-text"

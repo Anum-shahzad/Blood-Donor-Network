@@ -7,6 +7,7 @@ import ChatPanel from '../components/ChatPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
 import Autocomplete from '../components/Autocomplete.jsx';
 import ReportProblemModal from '../components/ReportProblemModal.jsx';
+import { confirmDialog } from '../components/ConfirmDialog.jsx';
 import useRequesterNotifications from '../lib/useRequesterNotifications.js';
 import RequestEvidencePanel, { checkEvidenceFiles, DEFAULT_EVIDENCE_LIMITS } from '../components/RequestEvidencePanel.jsx';
 import {
@@ -196,8 +197,16 @@ export default function RequesterDashboard() {
 
   async function updateStatus(requestId, status) {
     setError('');
-    const verb = status === 'fulfilled' ? 'mark this request as fulfilled' : 'cancel this request';
-    if (!window.confirm(`Are you sure you want to ${verb}? This updates the network status and closes active matching.`)) return;
+    const fulfilling = status === 'fulfilled';
+    const ok = await confirmDialog({
+      title: fulfilling ? 'Mark request as fulfilled?' : 'Cancel this request?',
+      message: fulfilling
+        ? 'This updates the network status and closes active matching.'
+        : 'This updates the network status and closes active matching. Donors who were matched will no longer be asked to donate.',
+      confirmLabel: fulfilling ? 'Yes, mark fulfilled' : 'Yes, cancel request',
+      cancelLabel: fulfilling ? 'Go back' : 'Keep request',
+    });
+    if (!ok) return;
     try {
       await apiPatch(`/api/requests/${requestId}/status`, { status });
       setSuccessMsg(`Request #${requestId} has been marked as ${status}.`);
@@ -222,7 +231,13 @@ export default function RequesterDashboard() {
 
   async function confirmClaim(requestId, donorId, donorName) {
     setError('');
-    if (!window.confirm(`Confirm that you received ${donorName}'s blood donation? Only confirm if it really happened. This counts the units and cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: 'Confirm donation received?',
+      message: `Confirm that you received ${donorName}'s blood donation? Only confirm if it really happened. This counts the units and cannot be undone.`,
+      confirmLabel: 'Yes, I received it',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     setClaimActing(`${requestId}:${donorId}`);
     try {
       const res = await apiPost(`/api/requests/${requestId}/commitments/${donorId}/confirm`, {});
@@ -243,7 +258,13 @@ export default function RequesterDashboard() {
 
   async function disputeClaim(requestId, donorId, donorName) {
     setError('');
-    if (!window.confirm(`Mark ${donorName}'s donation as Did Not Happen? It will not be counted. You can then report a problem to the administrators.`)) return;
+    const ok = await confirmDialog({
+      title: 'Mark donation as Did Not Happen?',
+      message: `${donorName}'s donation will not be counted. You can then report a problem to the administrators.`,
+      confirmLabel: 'Did not happen',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     setClaimActing(`${requestId}:${donorId}`);
     try {
       await apiPost(`/api/requests/${requestId}/commitments/${donorId}/dispute`, {});
@@ -261,7 +282,13 @@ export default function RequesterDashboard() {
 
   async function markDonorUnsuccessful(requestId, donorId, donorName) {
     setError('');
-    if (!window.confirm(`Mark ${donorName}'s donation as unsuccessful? Their committed units will be opened up for other donors again.`)) return;
+    const ok = await confirmDialog({
+      title: 'Mark donation as unsuccessful?',
+      message: `${donorName}'s committed units will be opened up for other donors again.`,
+      confirmLabel: 'Mark unsuccessful',
+      cancelLabel: 'Go back',
+    });
+    if (!ok) return;
     try {
       await apiPost(`/api/requests/${requestId}/commitments/${donorId}/unsuccessful`, {});
       setSuccessMsg(`${donorName}'s donation was marked unsuccessful. Those units are open to other donors again.`);
