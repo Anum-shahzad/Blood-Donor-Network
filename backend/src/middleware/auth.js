@@ -1,5 +1,11 @@
 import { verifyToken } from '../services/authService.js';
 import { pool } from '../config/db.js';
+import {
+  suspensionMessage,
+  describeSuspension,
+  liftExpiredSuspensions,
+  sweepExpiredSuspensions,
+} from '../services/moderation/moderationService.js';
 
 // Machine-readable code sent with every suspension denial so the frontend can
 // tell "your account is suspended" apart from an ordinary 403 (wrong role).
@@ -8,10 +14,14 @@ export const ACCOUNT_SUSPENDED_MESSAGE =
   'Your account has been suspended. Please contact the administrator.';
 
 // Shared by authenticate (every protected request) and the login route.
-export function sendAccountSuspended(res) {
+// Pass the users row to include the reason and end date the admin recorded.
+// Callers only do that for someone who has proved who they are (valid token or
+// verified password), so the reason is never shown to a stranger.
+export function sendAccountSuspended(res, account) {
   return res.status(403).json({
-    error: ACCOUNT_SUSPENDED_MESSAGE,
+    error: account ? suspensionMessage(account) : ACCOUNT_SUSPENDED_MESSAGE,
     code: ACCOUNT_SUSPENDED_CODE,
+    ...(account ? { suspension: describeSuspension(account) } : {}),
   });
 }
 
@@ -43,8 +53,12 @@ export async function authenticate(req, res, next) {
   }
 
   try {
+    // Ends temporary suspensions that have run out (at most once a minute per
+    // process), so the is_suspended flag other queries read stays accurate.
+    await sweepExpiredSuspensions();
+
     const [rows] = await pool.query(
-      'SELECT id, role, email, is_suspended FROM users WHERE id = ?',
+      'SELECT id, role, email, is_suspended, suspended_until, suspension_reason FROM users WHERE id = ?',
       [payload.id]
     );
     const account = rows[0];
@@ -54,8 +68,14 @@ export async function authenticate(req, res, next) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
+    // A temporary suspension whose time has passed ends now, for this person,
+    // without waiting for the sweep.
+    if (account.is_suspended && account.suspended_until) {
+      if ((await liftExpiredSuspensions(account.id)) > 0) account.is_suspended = 0;
+    }
+
     if (account.is_suspended && account.role !== 'admin') {
-      return sendAccountSuspended(res);
+      return sendAccountSuspended(res, account);
     }
 
     // Role comes from the database, not the token, so the role used by

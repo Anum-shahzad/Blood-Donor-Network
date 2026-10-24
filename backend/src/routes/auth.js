@@ -1,103 +1,166 @@
-import { verifyToken } from '../services/authService.js';
+import { Router } from 'express';
 import { pool } from '../config/db.js';
-import {
-  suspensionMessage,
-  describeSuspension,
-  liftExpiredSuspensions,
-  sweepExpiredSuspensions,
-} from '../services/moderation/moderationService.js';
+import { hashPassword, comparePassword, signToken } from '../services/authService.js';
+import { validateSignupPayload, isValidEmail, isValidPassword } from '../utils/validation.js';
+import { sendAccountSuspended } from '../middleware/auth.js';
+import { liftExpiredSuspensions } from '../services/moderation/moderationService.js';
 
-// Machine-readable code sent with every suspension denial so the frontend can
-// tell "your account is suspended" apart from an ordinary 403 (wrong role).
-export const ACCOUNT_SUSPENDED_CODE = 'ACCOUNT_SUSPENDED';
-export const ACCOUNT_SUSPENDED_MESSAGE =
-  'Your account has been suspended. Please contact the administrator.';
+const router = Router();
 
-// Shared by authenticate (every protected request) and the login route.
-// Pass the users row to include the reason and end date the admin recorded.
-// Callers only do that for someone who has proved who they are (valid token or
-// verified password), so the reason is never shown to a stranger.
-export function sendAccountSuspended(res, account) {
-  return res.status(403).json({
-    error: account ? suspensionMessage(account) : ACCOUNT_SUSPENDED_MESSAGE,
-    code: ACCOUNT_SUSPENDED_CODE,
-    ...(account ? { suspension: describeSuspension(account) } : {}),
-  });
-}
-
-// Confirms the request carries a valid JWT, then re-checks the account in the
-// database and attaches (id, role, email) to req.user for downstream handlers.
-//
-// The JWT alone is NOT enough: it stays valid for days and cannot be revoked,
-// so the account's current state (still exists? suspended?) is read from the
-// users table on every protected request. That is what makes suspension take
-// effect immediately for tokens issued before the suspension.
-//
-// Administrators are never locked out by the suspension flag: the admin
-// workflow is the only way to reactivate anyone, so a suspended admin would
-// leave nobody able to undo it. The admin status endpoint also refuses to
-// suspend an admin; this exemption is defence in depth.
-export async function authenticate(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
-  }
-
-  const token = header.slice('Bearer '.length);
-
-  let payload;
+// POST /api/auth/signup — donor or requester only (see validation.js for why
+// admin is excluded here).
+router.post('/signup', async (req, res, next) => {
   try {
-    payload = verifyToken(token);
+    const errors = validateSignupPayload(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('; ') });
+    }
+
+    const { name, email, password, role, phone, city, blood_group, last_donation_date } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    // User + donor profile are written in one transaction so a failure can
+    // never leave a donor account with no profile row (which would break
+    // matching and the availability toggle).
+    const conn = await pool.getConnection();
+    let userId;
+    try {
+      await conn.beginTransaction();
+      const [result] = await conn.query(
+        'INSERT INTO users (name, email, password_hash, role, phone, city) VALUES (?, ?, ?, ?, ?, ?)',
+        [name.trim(), normalizedEmail, passwordHash, role, phone ? phone.trim() : null, city.trim()]
+      );
+      userId = result.insertId;
+
+      if (role === 'donor') {
+        await conn.query(
+          'INSERT INTO donor_profiles (user_id, blood_group, last_donation_date) VALUES (?, ?, ?)',
+          [userId, blood_group, last_donation_date || null]
+        );
+      }
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      // Two signups with the same email at the same instant both pass the
+      // SELECT above; the unique key catches the loser.
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'An account with this email already exists' });
+      }
+      throw err;
+    } finally {
+      conn.release();
+    }
+
+    const token = signToken({ id: userId, role, email: normalizedEmail });
+    res.status(201).json({
+      token,
+      user: {
+        id: userId,
+        name: name.trim(),
+        email: normalizedEmail,
+        role,
+        phone: phone ? phone.trim() : null,
+        city: city.trim(),
+      },
+    });
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-
-  try {
-    // Ends temporary suspensions that have run out (at most once a minute per
-    // process), so the is_suspended flag other queries read stays accurate.
-    await sweepExpiredSuspensions();
-
-    const [rows] = await pool.query(
-      'SELECT id, role, email, is_suspended, suspended_until, suspension_reason FROM users WHERE id = ?',
-      [payload.id]
-    );
-    const account = rows[0];
-
-    // Valid signature but the account no longer exists.
-    if (!account) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-
-    // A temporary suspension whose time has passed ends now, for this person,
-    // without waiting for the sweep.
-    if (account.is_suspended && account.suspended_until) {
-      if ((await liftExpiredSuspensions(account.id)) > 0) account.is_suspended = 0;
-    }
-
-    if (account.is_suspended && account.role !== 'admin') {
-      return sendAccountSuspended(res, account);
-    }
-
-    // Role comes from the database, not the token, so the role used by
-    // authorize() always matches the account's current record.
-    req.user = { ...payload, id: account.id, role: account.role, email: account.email };
-    next();
-  } catch (err) {
-    // If the account state can't be read, fail closed (500) rather than let
-    // the request through unchecked.
     next(err);
   }
-}
+});
 
-// Use after authenticate: authorize('donor'), authorize('admin', 'requester'), etc.
-export function authorize(...allowedRoles) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+// POST /api/auth/login
+router.post('/login', async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    if (!isValidEmail(email) || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions for this action' });
+
+    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+    const user = rows[0];
+
+    // Deliberately identical error for "no such user" and "wrong password" —
+    // distinguishing them lets an attacker enumerate registered emails.
+    if (!user || !(await comparePassword(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
-    next();
-  };
-}
+
+    // Checked only AFTER the password is verified, so the suspended status is
+    // never revealed to someone who merely knows an email address. Admins are
+    // exempt (see middleware/auth.js).
+    // A temporary suspension that has run out is lifted here first.
+    if (user.is_suspended && user.suspended_until) {
+      if ((await liftExpiredSuspensions(user.id)) > 0) user.is_suspended = 0;
+    }
+    if (user.is_suspended && user.role !== 'admin') {
+      return sendAccountSuspended(res, user);
+    }
+
+    const token = signToken({ id: user.id, role: user.role, email: user.email });
+    res.json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone, city: user.city },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/bootstrap-admin — creates the one and only admin account.
+// Secret-gated and self-limiting: it refuses once any admin already exists,
+// so there is no ongoing attack surface once it's used the one time it's
+// needed. Set ADMIN_BOOTSTRAP_SECRET on the server before calling this, and
+// there is no reason to keep it around afterward.
+router.post('/bootstrap-admin', async (req, res, next) => {
+  try {
+    const { name, email, password, secret } = req.body;
+    const expectedSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
+
+    if (!expectedSecret || secret !== expectedSecret) {
+      return res.status(403).json({ error: 'Invalid bootstrap secret' });
+    }
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      return res.status(400).json({ error: 'name is required (min 2 characters)' });
+    }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'a valid email is required' });
+    }
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
+
+    const [existingAdmins] = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+    if (existingAdmins.length > 0) {
+      return res.status(409).json({ error: 'An admin account already exists — this endpoint only works once' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const [existingEmail] = await pool.query('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+    if (existingEmail.length > 0) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const [result] = await pool.query(
+      'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
+      [name.trim(), normalizedEmail, passwordHash, 'admin']
+    );
+
+    const token = signToken({ id: result.insertId, role: 'admin', email: normalizedEmail });
+    res.status(201).json({
+      token,
+      user: { id: result.insertId, name: name.trim(), email: normalizedEmail, role: 'admin' },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;
