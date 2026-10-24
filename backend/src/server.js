@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import donorsRouter from './routes/donors.js';
 import requestsRouter from './routes/requests.js';
 import adminRouter from './routes/admin.js';
+import adminModerationRouter from './routes/adminModeration.js';
 import conversationsRouter from './routes/conversations.js';
 import notificationsRouter from './routes/notifications.js';
 import publicRouter from './routes/public.js';
@@ -96,6 +97,7 @@ app.use('/api/request-evidence', requestEvidenceRouter);
 // Mounted before /api/admin so the more specific path is matched first.
 app.use('/api/admin/verification', adminVerificationRouter);
 app.use('/api/admin/request-evidence', adminRequestEvidenceRouter);
+app.use('/api/admin/moderation', adminModerationRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/notifications', notificationsRouter);

@@ -6,6 +6,7 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminVerificationPanel from '../components/AdminVerificationPanel.jsx';
 import VerificationBadge from '../components/VerificationBadge.jsx';
 import AdminRequestEvidence from '../components/AdminRequestEvidence.jsx';
+import AdminReportCase from '../components/AdminReportCase.jsx';
 import {
   GaugeIcon,
   ShieldCheckIcon,
@@ -36,6 +37,8 @@ export default function AdminDashboard() {
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
   const [reportEvents, setReportEvents] = useState({});
+  // Report whose case file is open in the Abuse & Fraud tab.
+  const [openReportId, setOpenReportId] = useState(null);
 
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -617,6 +620,16 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Case file for the report the admin opened */}
+          {openReportId && (
+            <AdminReportCase
+              key={openReportId}
+              reportId={openReportId}
+              onClose={() => setOpenReportId(null)}
+              onChanged={loadFraudReports}
+            />
+          )}
+
           {/* Submitted Abuse Reports */}
           <div className="form-card">
             <h3 style={{ marginTop: 0, fontSize: '1.1rem', marginBottom: '0.35rem' }}>
@@ -691,24 +704,13 @@ export default function AdminDashboard() {
                                 Investigate
                               </button>
                             )}
-                            {(r.status === 'pending' || r.status === 'investigating') && (
-                              <>
-                                <button
-                                  onClick={() => updateReportStatus(r.id, 'resolved')}
-                                  className="btn btn-secondary"
-                                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                                >
-                                  Resolve
-                                </button>
-                                <button
-                                  onClick={() => updateReportStatus(r.id, 'dismissed')}
-                                  className="btn btn-secondary"
-                                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                                >
-                                  Dismiss
-                                </button>
-                              </>
-                            )}
+                            <button
+                              onClick={() => { setOpenReportId(r.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              className="btn btn-primary"
+                              style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                            >
+                              Open Case
+                            </button>
                             <button
                               onClick={() => toggleReportHistory(r.id)}
                               className="btn btn-text"

@@ -47,7 +47,7 @@ const call = async (method, path, token, body) => {
 const signup = async (o) => (await call('POST', '/api/auth/signup', null, { password: 'password123', city: 'Testville', ...o })).json;
 const login = (email, password = 'password123') => call('POST', '/api/auth/login', null, { email, password });
 const isSuspendedDenial = (r) => r.status === 403 && r.json?.code === 'ACCOUNT_SUSPENDED' && /suspended/i.test(r.json?.error || '');
-const setSuspended = (admin, id, v) => call('PATCH', `/api/admin/donors/${id}/status`, admin, { is_suspended: v });
+const setSuspended = (admin, id, v) => call('PATCH', `/api/admin/donors/${id}/status`, admin, { is_suspended: v, reason: 'Integration test suspension' });
 
 try {
   const adminRes = await call('POST', '/api/auth/bootstrap-admin', null, { name: 'Admin', email: 'admin@test.dev', password: 'password123', secret: 'bootstrap-test' });

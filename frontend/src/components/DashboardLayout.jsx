@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 import BrandMark from './BrandMark.jsx';
+import AccountNotices from './AccountNotices.jsx';
 import {
   GridIcon,
   HomeIcon,
@@ -115,7 +116,10 @@ export default function DashboardLayout({ user, onLogout, children }) {
         onToggleCollapse={toggleCollapsed}
       />
 
-      <main className="dashboard-main">{children}</main>
+      <main className="dashboard-main">
+        {user?.role !== 'admin' && <AccountNotices />}
+        {children}
+      </main>
     </div>
   );
 }
