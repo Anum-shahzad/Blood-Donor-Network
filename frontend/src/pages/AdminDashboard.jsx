@@ -37,6 +37,9 @@ export default function AdminDashboard() {
   const [evidenceByRequest, setEvidenceByRequest] = useState({});
   const [donors, setDonors] = useState([]);
   const [fraudData, setFraudData] = useState({ reports: [], rate_limit_flags: [] });
+  // Pending/approved/... counts for donor ID and donation evidence submissions
+  // (the queue shown in the ID & Evidence Review tab).
+  const [submissionCounts, setSubmissionCounts] = useState(null);
   const [reportEvents, setReportEvents] = useState({});
   // Report whose case file is open in the Abuse & Fraud tab.
   const [openReportId, setOpenReportId] = useState(null);
@@ -57,6 +60,8 @@ export default function AdminDashboard() {
     setSearchParams({ tab: tabId });
     setError('');
     setSuccessMsg('');
+    // Decisions made in the ID & Evidence Review tab should show on Home right away.
+    if (tabId === 'tab-home') loadSubmissionCounts();
   }
 
   function loadAll() {
@@ -65,6 +70,13 @@ export default function AdminDashboard() {
     loadEvidence();
     loadDonors();
     loadFraudReports();
+    loadSubmissionCounts();
+  }
+
+  function loadSubmissionCounts() {
+    apiGet('/api/admin/verification/submissions?status=pending')
+      .then((data) => setSubmissionCounts(data?.counts || null))
+      .catch(() => {});
   }
 
   function loadAnalytics() {
@@ -191,14 +203,10 @@ export default function AdminDashboard() {
 
   const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
   const pendingRequestsCount = requests.filter((r) => !r.is_verified).length;
+  // Donor ID documents and donation evidence waiting in the ID & Evidence Review queue.
+  const pendingIdReviewCount =
+    (submissionCounts?.identity?.pending || 0) + (submissionCounts?.donation_evidence?.pending || 0);
   const pendingDonorsCount = donors.filter((d) => !d.verification?.identity_verified).length;
-  // Evidence waiting for a decision on a request that is still live; evidence
-  // on a closed request can no longer be reviewed, so it is not counted.
-  const pendingEvidenceCount = requests.filter(
-    (r) =>
-      ['pending', 'verified', 'matched', 'donor_accepted'].includes(r.status) &&
-      evidenceByRequest[r.id]?.status === 'pending'
-  ).length;
 
   return (
     <DashboardLayout user={user} onLogout={handleLogout}>
@@ -246,7 +254,7 @@ export default function AdminDashboard() {
             <div className="stack" style={{ gap: '0.6rem' }}>
               {[
                 { label: 'Requests awaiting verification', count: pendingRequestsCount, tab: 'tab-verifications' },
-                { label: 'Request evidence awaiting review', count: pendingEvidenceCount, tab: 'tab-verifications' },
+                { label: 'Donor ID and donation evidence awaiting review', count: pendingIdReviewCount, tab: 'tab-id-review' },
                 { label: 'Rate-limit flags to review', count: fraudData?.rate_limit_flags?.length || 0, tab: 'tab-fraud' },
               ].map((item) => (
                 <div
